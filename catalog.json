@@ -1,0 +1,84 @@
+{
+  "categories": {
+    "classic": {
+      "name": "១. 💍 ធៀបការម៉ូដក្លាសិក",
+      "folder": "images/classic",
+      "items": [
+        {
+          "id": "classic_01",
+          "name": "ធៀបការក្លាសិក ម៉ូដ 01",
+          "price": 1200,
+          "image": "images/classic/classic_01.jpg",
+          "description": "ធៀបការពណ៌មាស បែបបុរាណ មានស្រោមសំបុត្រក្រាស់"
+        },
+        {
+          "id": "classic_02",
+          "name": "ធៀបការក្លាសិក ម៉ូដ 02",
+          "price": 1300,
+          "image": "images/classic/classic_02.jpg",
+          "description": "ធៀបការពណ៌មាសស្ពាន់ មានអក្សរគ្រវី Premium"
+        }
+      ]
+    },
+    "modern": {
+      "name": "២. 🌸 ធៀបការម៉ូដទំនើប",
+      "folder": "images/modern",
+      "items": [
+        {
+          "id": "modern_01",
+          "name": "ធៀបការទំនើប ម៉ូដ 01",
+          "price": 1500,
+          "image": "images/modern/modern_01.jpg",
+          "description": "ធៀបការរចនាបែបអឺរ៉ុប ពណ៌ Rose Gold"
+        },
+        {
+          "id": "modern_02",
+          "name": "ធៀបការទំនើប ម៉ូដ 02",
+          "price": 1600,
+          "image": "images/modern/modern_02.jpg",
+          "description": "ធៀបការទំនើប ម៉ូដ Minimalist ពណ៌ផ្កាឈូក"
+        }
+      ]
+    },
+    "folded": {
+      "name": "៣. 🎀 ធៀបការម៉ូដកាត់បត់ Premium",
+      "folder": "images/folded",
+      "items": [
+        {
+          "id": "folded_01",
+          "name": "ធៀបកាត់បត់ ម៉ូដ 01",
+          "price": 1800,
+          "image": "images/folded/folded_01.jpg",
+          "description": "ធៀបកាត់បត់ ៣ តង់ មានចងបូអក្សរស្ពាន់មាស"
+        },
+        {
+          "id": "folded_02",
+          "name": "ធៀបកាត់បត់ ម៉ូដ 02",
+          "price": 2000,
+          "image": "images/folded/folded_02.jpg",
+          "description": "ធៀបកាត់បត់ Luxury Box Style"
+        }
+      ]
+    },
+    "housewarming": {
+      "name": "៤. 🏡 ធៀបឡើងផ្ទះ & ខួបកំណើត",
+      "folder": "images/housewarming",
+      "items": [
+        {
+          "id": "house_01",
+          "name": "ធៀបឡើងផ្ទះ ម៉ូដ 01",
+          "price": 1000,
+          "image": "images/housewarming/house_01.jpg",
+          "description": "ធៀបសម្រាប់កម្មវិធីឡើងផ្ទះ រចនាស្រស់ស្អាត"
+        },
+        {
+          "id": "house_02",
+          "name": "ធៀបខួបកំណើត ម៉ូដ 02",
+          "price": 1000,
+          "image": "images/housewarming/house_02.jpg",
+          "description": "ធៀបកម្មវិធីខួបកំណើត ឬពិធីជប់លៀង"
+        }
+      ]
+    }
+  }
+}

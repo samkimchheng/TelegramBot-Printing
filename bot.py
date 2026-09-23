@@ -1,0 +1,529 @@
+import os
+import sys
+import logging
+import json
+from datetime import datetime
+from pathlib import Path
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters,
+)
+
+import config
+
+# Configure logging
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# Directory paths
+ORDERS_DIR = config.BASE_DIR / "orders"
+ORDERS_DIR.mkdir(parents=True, exist_ok=True)
+
+CATALOG_FILE = config.BASE_DIR / "catalog.json"
+
+# Temporary user order sessions: user_id -> dict
+USER_SESSIONS = {}
+
+
+def load_catalog() -> dict:
+    """Load catalog dynamically from catalog.json file."""
+    if not CATALOG_FILE.exists():
+        return {"categories": {}}
+    try:
+        with open(CATALOG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading catalog.json: {e}")
+        return {"categories": {}}
+
+
+def get_invitation_menu_keyboard() -> InlineKeyboardMarkup:
+    """Generate inline keyboard specialized for Wedding & Event Invitations."""
+    keyboard = [
+        [InlineKeyboardButton("💍 មើលកាតាឡុករូបថតម៉ូដធៀប & តម្លៃ", callback_data="inv_samples")],
+        [InlineKeyboardButton("📩 ផ្ញើគំរូធៀបផ្ទាល់ខ្លួន (Upload Custom Design)", callback_data="inv_order")],
+        [InlineKeyboardButton("🎁 កញ្ចប់ប្រូម៉ូសិនថែមជូនពិសេស", callback_data="inv_promos")],
+        [InlineKeyboardButton("📞 ទំនាក់ទំនងពិគ្រោះយោបល់", callback_data="inv_contact")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_categories_keyboard(catalog: dict) -> InlineKeyboardMarkup:
+    """Generate inline keyboard for main categories."""
+    categories = catalog.get("categories", {})
+    keyboard = []
+    
+    for cat_key, cat_info in categories.items():
+        name = cat_info.get("name", cat_key)
+        item_count = len(cat_info.get("items", []))
+        button_text = f"{name} ({item_count} ម៉ូដ)"
+        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"cat_{cat_key}")])
+
+    keyboard.append([InlineKeyboardButton("📩 ផ្ញើគំរូធៀបផ្ទាល់ខ្លួនរបស់អ្នក", callback_data="inv_order")])
+    keyboard.append([InlineKeyboardButton("🔙 ត្រឡប់ទៅម៉ឺនុយដើម", callback_data="main_menu")])
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_session_keyboard(session: dict) -> InlineKeyboardMarkup:
+    """Generate inline keyboard for order settings."""
+    copies = session.get("copies", 100)
+
+    # Copies options for invitations (e.g. 50, 100, 200, 300, 500)
+    copy_buttons = [
+        InlineKeyboardButton(
+            f"{'✅ ' if copies == c else ''}{c} ធៀប", callback_data=f"set_copy_{c}"
+        )
+        for c in [50, 100, 200, 300, 500]
+    ]
+
+    # Action buttons
+    action_buttons = [
+        InlineKeyboardButton("✅ បញ្ជូនការកុម្ម៉ង់ឥឡូវនេះ", callback_data="action_submit_order"),
+        InlineKeyboardButton("🔙 ជ្រើសរើសម៉ូដផ្សេង", callback_data="inv_samples"),
+    ]
+
+    keyboard = [
+        copy_buttons,
+        action_buttons
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_session_text(session: dict) -> str:
+    """Format session status text in Khmer."""
+    design_title = session.get("design_title", "គំរូផ្ទាល់ខ្លួន (Custom Design)")
+    price_per_card = session.get("price_per_card", 0)
+    copies = session.get("copies", 100)
+    
+    total_price_text = f"{copies * price_per_card:,} រៀល" if price_per_card > 0 else "ពិភាក្សាតាម File"
+
+    text = (
+        f"💍 **ព័ត៌មានកុម្ម៉ង់ធៀប**\n\n"
+        f"▪️ **ម៉ូដដែលបានជ្រើសរើស**: {design_title}\n"
+        f"▪️ **តម្លៃក្នុង ១ ធៀប**: {price_per_card:,} រៀល\n"
+        f"▪️ **ចំនួនធៀបកុម្ម៉ង់**: **{copies} ធៀប**\n"
+        f"▪️ **តម្លៃសរុបប្រហែល**: **{total_price_text}**\n\n"
+        f"👇 សូមជ្រើសរើសចំនួនធៀប រួចចុច **'បញ្ជូនការកុម្ម៉ង់ឥឡូវនេះ'**:"
+    )
+    return text
+
+
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /start command."""
+    user = update.effective_user
+    
+    welcome_msg = (
+        f"សួស្តី {user.first_name}! 👋\n\n"
+        f"💍 **ស្វាគមន៍មកកាន់ សេវាកម្មបោះពុម្ពធៀបការ និងធៀបកម្មវិធីផ្សេងៗ**\n\n"
+        f"ពួកយើងមានសេវាកម្មរចនា និងបោះពុម្ពធៀបអាពាហ៍ពិពាហ៍ ធៀបឡើងផ្ទះ ធៀបខួបកំណើត និងធៀបកម្មវិធីគ្រប់ប្រភេទ ដោយគុណភាពខ្ពស់ និងតម្លៃសមរម្យបំផុត!\n\n"
+        f"សូមជ្រើសរើសជម្រើសខាងក្រោម៖"
+    )
+    
+    await update.message.reply_text(
+        welcome_msg,
+        reply_markup=get_invitation_menu_keyboard(),
+        parse_mode="Markdown"
+    )
+
+
+async def show_categories(target, is_callback=True):
+    catalog = load_catalog()
+    msg = (
+        "📂 **កាតាឡុកប្រភេទទិន្នន័យម៉ូដធៀប (Invitation Categories)**\n\n"
+        "សូមជ្រើសរើសប្រភេទទិន្នន័យម៉ូដធៀបខាងក្រោម ដើម្បីមើលរូបថត និងតម្លៃកំណត់៖"
+    )
+    kb = get_categories_keyboard(catalog)
+    if is_callback:
+        await target.edit_message_text(msg, reply_markup=kb, parse_mode="Markdown")
+    else:
+        await target.message.reply_text(msg, reply_markup=kb, parse_mode="Markdown")
+
+
+async def show_item_photo(query, context, cat_key: str, item_index: int):
+    catalog = load_catalog()
+    category = catalog.get("categories", {}).get(cat_key)
+    if not category:
+        await query.edit_message_text("⚠️ មិនមានប្រភេទទិន្នន័យនេះឡើយ។")
+        return
+
+    items = category.get("items", [])
+    if not items:
+        await query.edit_message_text(f"⚠️ ប្រភេទ `{category.get('name')}` មិនទាន់មានរូបថតគំរូធៀបនៅឡើយទេ។")
+        return
+
+    # Keep index in valid bounds
+    item_index = item_index % len(items)
+    item = items[item_index]
+
+    cat_name = category.get("name", "ប្រភេទធៀប")
+    item_name = item.get("name", f"ម៉ូដ {item_index + 1}")
+    price = item.get("price", 0)
+    desc = item.get("description", "")
+    img_rel_path = item.get("image", "")
+
+    img_path = config.BASE_DIR / img_rel_path
+
+    caption = (
+        f"📸 **{item_name}** ({cat_name})\n\n"
+        f"📝 **ព័ត៌មានលម្អិត**: {desc}\n"
+        f"💰 **តម្លៃកំណត់**: **{price:,} រៀល / ធៀប**\n\n"
+        f"🎁 *ប្រូម៉ូសិន*: ឥតគិតថ្លៃសេវារចនា (Free Design) សម្រាប់ការកុម្ម៉ង់ចាប់ពី ២០០ ធៀបឡើងទៅ!"
+    )
+
+    prev_idx = (item_index - 1) % len(items)
+    next_idx = (item_index + 1) % len(items)
+
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("👉 ជ្រើសរើសម៉ូដនេះ (Select This Design)", callback_data=f"selectitem_{cat_key}_{item_index}")],
+        [
+            InlineKeyboardButton("⬅️ ម៉ូដមុន", callback_data=f"viewitem_{cat_key}_{prev_idx}"),
+            InlineKeyboardButton(f"ម៉ូដ {item_index + 1}/{len(items)}", callback_data="noop"),
+            InlineKeyboardButton("➡️ ម៉ូដបន្ទាប់", callback_data=f"viewitem_{cat_key}_{next_idx}")
+        ],
+        [InlineKeyboardButton("🔙 ត្រឡប់ទៅប្រភេទធៀបទាំងអស់", callback_data="inv_samples")]
+    ])
+
+    chat_id = query.message.chat_id
+    await query.message.delete()
+
+    if img_path.exists():
+        with open(img_path, "rb") as photo_file:
+            await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=photo_file,
+                caption=caption,
+                reply_markup=kb,
+                parse_mode="Markdown"
+            )
+    else:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=caption,
+            reply_markup=kb,
+            parse_mode="Markdown"
+        )
+
+
+async def show_promos(target, is_callback=True):
+    msg = (
+        "🎁 **កញ្ចប់ប្រូម៉ូសិនពិសេស សម្រាប់ធៀបការ & កម្មវិធី**\n\n"
+        "🎉 **ការផ្តល់ជូនពិសេស**:\n"
+        "១. **FREE Design**: ឥតគិតថ្លៃសេវារចនាម៉ូដធៀប សម្រាប់ការកុម្ម៉ង់ចាប់ពី ២០០ ធៀបឡើងទៅ!\n"
+        "២. **FREE Welcome Board Frame**: ថែមជូនស៊ុមរូបថតស្វាគមន៍មុខរោងការ ១ ឈុតដោយឥតគិតថ្លៃ!\n"
+        "៣. **FREE Delivery**: សេវាដឹកជញ្ជូនដល់ទីកន្លែងសម្រាប់អតិថិជនក្នុងតំបន់!\n\n"
+        "📩 កុម្ម៉ង់កាន់តែច្រើន បញ្ចុះតម្លៃកាន់តែពិសេស!"
+    )
+    back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ត្រឡប់ទៅម៉ឺនុយដើម", callback_data="main_menu")]])
+    if is_callback:
+        await target.edit_message_text(msg, reply_markup=back_kb, parse_mode="Markdown")
+    else:
+        await target.message.reply_text(msg, reply_markup=back_kb, parse_mode="Markdown")
+
+
+async def show_contact(target, is_callback=True):
+    msg = (
+        "📞 **ព័ត៌មានទំនាក់ទំនង & ពិគ្រោះយោបល់**\n\n"
+        "🏪 **ហាងសេវាកម្មបោះពុម្ពធៀបការ និងធៀបកម្មវិធី**\n"
+        "☎️ **ទូរស័ព្ទ**: 012 XXX XXX / 097 XXX XXX\n"
+        "💬 **Telegram**: @AdminPrintShop\n"
+        "📍 **ទីតាំង**: ជិតសាកលវិទ្យាល័យ / ក្នុងក្រុង\n\n"
+        "⏰ បើកទទួលការកុម្ម៉ង់រៀងរាល់ថ្ងៃ ពីម៉ោង 7:30 ព្រឹក - 7:00 យប់!"
+    )
+    back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ត្រឡប់ទៅម៉ឺនុយដើម", callback_data="main_menu")]])
+    if is_callback:
+        await target.edit_message_text(msg, reply_markup=back_kb, parse_mode="Markdown")
+    else:
+        await target.message.reply_text(msg, reply_markup=back_kb, parse_mode="Markdown")
+
+
+async def show_upload_instruction(target, is_callback=True):
+    msg = (
+        "📩 **សេវាទទួលកុម្ម៉ង់បោះពុម្ពធៀបផ្ទាល់ខ្លួន**\n\n"
+        "📥 **សូមផ្ញើ File គំរូធៀប (PDF) ឬរូបភាព (JPG/PNG) ចូលក្នុង Chat នេះ!**\n\n"
+        "បន្ទាប់មក អ្នកអាចជ្រើសរើសចំនួនធៀប (៥០, ១០០, ២០០, ៣០០, ៥០០...) រួចចុចបញ្ជូនការកុម្ម៉ង់បានភ្លាមៗ។"
+    )
+    back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ត្រឡប់ទៅម៉ឺនុយដើម", callback_data="main_menu")]])
+    if is_callback:
+        await target.edit_message_text(msg, reply_markup=back_kb, parse_mode="Markdown")
+    else:
+        await target.message.reply_text(msg, reply_markup=back_kb, parse_mode="Markdown")
+
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle uploaded document file."""
+    user = update.effective_user
+    doc = update.message.document
+    file_name = doc.file_name or "invitation_design.pdf"
+    ext = Path(file_name).suffix.lower()
+
+    if ext not in [".pdf", ".png", ".jpg", ".jpeg"]:
+        await update.message.reply_text(
+            "⚠️ សូមផ្ញើឯកសារប្រភេទ **PDF** ឬ **រូបភាព (PNG/JPG)** នៃគំរូធៀបរបស់អ្នក!"
+        )
+        return
+
+    status_msg = await update.message.reply_text("📥 កំពុងទាញយកឯកសារគំរូធៀប...")
+
+    user_dir = config.DOWNLOAD_DIR / str(user.id)
+    user_dir.mkdir(parents=True, exist_ok=True)
+    file_path = user_dir / file_name
+
+    tg_file = await context.bot.get_file(doc.file_id)
+    await tg_file.download_to_drive(file_path)
+
+    session = {
+        "design_key": "custom",
+        "design_title": f"គំរូផ្ទាល់ខ្លួន (`{file_name}`)",
+        "price_per_card": 0,
+        "file_path": str(file_path),
+        "file_name": file_name,
+        "copies": 100,
+    }
+    USER_SESSIONS[user.id] = session
+
+    text = get_session_text(session)
+    keyboard = get_session_keyboard(session)
+
+    await status_msg.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle uploaded photo file."""
+    user = update.effective_user
+    photo = update.message.photo[-1]
+    file_name = f"invitation_{photo.file_id[:8]}.jpg"
+
+    status_msg = await update.message.reply_text("📥 កំពុងទាញយករូបភាពគំរូធៀប...")
+
+    user_dir = config.DOWNLOAD_DIR / str(user.id)
+    user_dir.mkdir(parents=True, exist_ok=True)
+    image_path = user_dir / file_name
+
+    tg_file = await context.bot.get_file(photo.file_id)
+    await tg_file.download_to_drive(image_path)
+
+    session = {
+        "design_key": "custom",
+        "design_title": f"រូបភាពគំរូផ្ទាល់ខ្លួន (`{file_name}`)",
+        "price_per_card": 0,
+        "file_path": str(image_path),
+        "file_name": file_name,
+        "copies": 100,
+    }
+    USER_SESSIONS[user.id] = session
+
+    text = get_session_text(session)
+    keyboard = get_session_keyboard(session)
+
+    await status_msg.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+
+async def handle_text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+
+    if "ម៉ូដធៀប" in text:
+        await show_categories(update, is_callback=False)
+    elif "ផ្ញើគំរូធៀបកុម្ម៉ង់" in text:
+        await show_upload_instruction(update, is_callback=False)
+    elif "ប្រូម៉ូសិន" in text:
+        await show_promos(update, is_callback=False)
+    elif "ទំនាក់ទំនង" in text:
+        await show_contact(update, is_callback=False)
+
+
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+
+    if data == "main_menu":
+        welcome_msg = (
+            "💍 **សេវាកម្មបោះពុម្ពធៀបការ និងធៀបកម្មវិធីផ្សេងៗ**\n\n"
+            "សូមជ្រើសរើសជម្រើសខាងក្រោម៖"
+        )
+        if query.message.photo:
+            await query.message.delete()
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=welcome_msg,
+                reply_markup=get_invitation_menu_keyboard(),
+                parse_mode="Markdown"
+            )
+        else:
+            await query.edit_message_text(welcome_msg, reply_markup=get_invitation_menu_keyboard(), parse_mode="Markdown")
+        return
+
+    elif data == "inv_samples":
+        if query.message.photo:
+            await query.message.delete()
+            catalog = load_catalog()
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="📂 **កាតាឡុកប្រភេទទិន្នន័យម៉ូដធៀប (Invitation Categories)**\n\nសូមជ្រើសរើសប្រភេទទិន្នន័យម៉ូដធៀបខាងក្រោម ដើម្បីមើលរូបថត និងតម្លៃកំណត់៖",
+                reply_markup=get_categories_keyboard(catalog),
+                parse_mode="Markdown"
+            )
+        else:
+            await show_categories(query, is_callback=True)
+        return
+
+    elif data.startswith("cat_"):
+        cat_key = data.replace("cat_", "")
+        await show_item_photo(query, context, cat_key, 0)
+        return
+
+    elif data.startswith("viewitem_"):
+        parts = data.split("_")
+        cat_key = parts[1]
+        item_index = int(parts[2])
+        await show_item_photo(query, context, cat_key, item_index)
+        return
+
+    elif data.startswith("selectitem_"):
+        parts = data.split("_")
+        cat_key = parts[1]
+        item_index = int(parts[2])
+        
+        catalog = load_catalog()
+        category = catalog.get("categories", {}).get(cat_key, {})
+        items = category.get("items", [])
+        
+        if 0 <= item_index < len(items):
+            item = items[item_index]
+            user_id = query.from_user.id
+            session = {
+                "design_key": item.get("id"),
+                "design_title": item.get("name"),
+                "price_per_card": item.get("price", 0),
+                "file_name": f"{item.get('id')}.pdf",
+                "file_path": item.get("image"),
+                "copies": 100,
+            }
+            USER_SESSIONS[user_id] = session
+
+            text = get_session_text(session)
+            keyboard = get_session_keyboard(session)
+
+            if query.message.photo:
+                await query.message.delete()
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            else:
+                await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        return
+
+    elif data == "inv_order":
+        if query.message.photo:
+            await query.message.delete()
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="📩 **សេវាទទួលកុម្ម៉ង់បោះពុម្ពធៀបផ្ទាល់ខ្លួន**\n\n📥 **សូមផ្ញើ File គំរូធៀប (PDF) ឬរូបភាព (JPG/PNG) ចូលក្នុង Chat នេះ!**",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ត្រឡប់ទៅម៉ឺនុយដើម", callback_data="main_menu")]]),
+                parse_mode="Markdown"
+            )
+        else:
+            await show_upload_instruction(query, is_callback=True)
+        return
+
+    elif data == "inv_promos":
+        await show_promos(query, is_callback=True)
+        return
+    elif data == "inv_contact":
+        await show_contact(query, is_callback=True)
+        return
+
+    user_id = query.from_user.id
+    session = USER_SESSIONS.get(user_id)
+
+    if not session:
+        await query.edit_message_text("⚠️ មិនមានប្រតិបត្តិការកុម្ម៉ង់សកម្មឡើយ។ សូមជ្រើសរើសម៉ូដធៀបម្តងទៀត!")
+        return
+
+    if data.startswith("set_copy_"):
+        copies = int(data.replace("set_copy_", ""))
+        session["copies"] = copies
+        text = get_session_text(session)
+        keyboard = get_session_keyboard(session)
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    elif data == "action_cancel":
+        del USER_SESSIONS[user_id]
+        await query.edit_message_text("❌ ប្រតិបត្តិការកុម្ម៉ង់ត្រូវបានបោះបង់។")
+
+    elif data == "action_submit_order":
+        user = query.from_user
+        order_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        copies = session["copies"]
+        price_per_card = session.get("price_per_card", 0)
+        total_price_text = f"{copies * price_per_card:,} រៀល" if price_per_card > 0 else "ពិភាក្សាតាម File"
+        
+        # Create order record
+        order_record = {
+            "order_id": f"ORD_{user_id}_{int(datetime.now().timestamp())}",
+            "user_id": user_id,
+            "user_name": user.full_name or user.username or "Customer",
+            "username": f"@{user.username}" if user.username else "N/A",
+            "design_title": session.get("design_title"),
+            "file_name": session.get("file_name"),
+            "file_path": session.get("file_path"),
+            "copies": copies,
+            "total_price": total_price_text,
+            "order_time": order_time
+        }
+
+        # Save order details to orders directory
+        order_file = ORDERS_DIR / f"{order_record['order_id']}.json"
+        with open(order_file, "w", encoding="utf-8") as f:
+            json.dump(order_record, f, ensure_ascii=False, indent=2)
+
+        # Notify customer
+        await query.edit_message_text(
+            f"✅ **ទទួលបានការកុម្ម៉ង់ធៀបដោយជោគជ័យ!**\n\n"
+            f"▪️ **លេខកុម្ម៉ង់ (Order ID)**: `{order_record['order_id']}`\n"
+            f"▪️ **ម៉ូដធៀប**: {session.get('design_title')}\n"
+            f"▪️ **ចំនួនកុម្ម៉ង់**: **{copies} ធៀប**\n"
+            f"▪️ **តម្លៃសរុបប្រហែល**: **{total_price_text}**\n\n"
+            f"📩 ក្រុមការងាររបស់យើងបានទទួលព័ត៌មានកុម្ម៉ង់របស់អ្នករួចរាល់ហើយ។ ពួកយើងនឹងពិនិត្យមើល និងទាក់ទងមកលោកអ្នកវិញក្នុងពេលឆាប់ៗនេះ!\n\n"
+            f"សូមអរគុណ!",
+            parse_mode="Markdown"
+        )
+
+        if user_id in USER_SESSIONS:
+            del USER_SESSIONS[user_id]
+
+
+def main():
+    """Start the bot application."""
+    token = config.BOT_TOKEN
+    if not token or token == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
+        print("ERROR: BOT_TOKEN is missing in .env file!")
+        sys.exit(1)
+
+    print("Starting Multi-Folder Catalog Invitation Order Bot...")
+    app = ApplicationBuilder().token(token).build()
+
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_reply))
+    app.add_handler(CallbackQueryHandler(handle_callback))
+
+    print("Bot is running and listening for Telegram messages... Press Ctrl+C to stop.")
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
