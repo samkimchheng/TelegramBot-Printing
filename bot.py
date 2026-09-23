@@ -231,10 +231,10 @@ async def show_promos(target, is_callback=True):
 async def show_contact(target, is_callback=True):
     msg = (
         "📞 **ព័ត៌មានទំនាក់ទំនង & ពិគ្រោះយោបល់**\n\n"
-        "🏪 **ហាងសេវាកម្មបោះពុម្ពធៀបការ និងធៀបកម្មវិធី**\n"
-        "☎️ **ទូរស័ព្ទ**: 012 XXX XXX / 097 XXX XXX\n"
-        "💬 **Telegram**: @AdminPrintShop\n"
-        "📍 **ទីតាំង**: ជិតសាកលវិទ្យាល័យ / ក្នុងក្រុង\n\n"
+        "🏪 **ឆេងមុនីបោះពុម្ព**\n"
+        "☎️ **ទូរស័ព្ទ**: 093586024 / 078515484\n"
+        "💬 **Telegram**: https://t.me/Kimchheng12\n"
+        "📍 **ទីតាំង**: ខាងជើងវត្តយាកាបក្រោម / ទល់មុខតារាងបាល់ទះកុងចេក\n\n"
         "⏰ បើកទទួលការកុម្ម៉ង់រៀងរាល់ថ្ងៃ ពីម៉ោង 7:30 ព្រឹក - 7:00 យប់!"
     )
     back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ត្រឡប់ទៅម៉ឺនុយដើម", callback_data="main_menu")]])
