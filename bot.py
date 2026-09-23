@@ -71,7 +71,7 @@ def load_catalog() -> dict:
 def get_invitation_menu_keyboard() -> InlineKeyboardMarkup:
     """Generate inline keyboard specialized for Wedding & Event Invitations."""
     keyboard = [
-        [InlineKeyboardButton("💍 មើលកាតាឡុករូបថតម៉ូដធៀប & តម្លៃ", callback_data="inv_samples")],
+        [InlineKeyboardButton("💍 ចុចមើលម៉ូដធៀប", callback_data="inv_samples")],
         [InlineKeyboardButton("📩 ផ្ញើគំរូធៀបផ្ទាល់ខ្លួន (Upload Custom Design)", callback_data="inv_order")],
         [InlineKeyboardButton("🎁 កញ្ចប់ប្រូម៉ូសិនថែមជូនពិសេស", callback_data="inv_promos")],
         [InlineKeyboardButton("📞 ទំនាក់ទំនងពិគ្រោះយោបល់", callback_data="inv_contact")],
@@ -568,6 +568,18 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.error("Exception while handling an update:", exc_info=context.error)
 
 
+async def post_init(app):
+    """Set bot commands description in Telegram menu."""
+    from telegram import BotCommand
+    commands = [
+        BotCommand("start", "💍 ចុចមើលម៉ូដធៀប")
+    ]
+    try:
+        await app.bot.set_my_commands(commands)
+    except Exception as e:
+        logger.error(f"Error setting bot commands: {e}")
+
+
 def main():
     """Start the bot application securely."""
     token = config.BOT_TOKEN
@@ -576,7 +588,7 @@ def main():
         sys.exit(1)
 
     print("Starting Hardened Telegram Invitation Order Bot...")
-    app = ApplicationBuilder().token(token).build()
+    app = ApplicationBuilder().token(token).post_init(post_init).build()
 
     app.add_error_handler(error_handler)
 
