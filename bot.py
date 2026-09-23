@@ -1,5 +1,7 @@
 import os
 import sys
+import re
+import time
 import logging
 import json
 from datetime import datetime
@@ -16,7 +18,7 @@ from telegram.ext import (
 
 import config
 
-# Configure logging
+# Configure logging securely
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
@@ -29,12 +31,33 @@ ORDERS_DIR.mkdir(parents=True, exist_ok=True)
 
 CATALOG_FILE = config.BASE_DIR / "catalog.json"
 
-# Temporary user order sessions: user_id -> dict
+# Temporary user order sessions & rate limiters
 USER_SESSIONS = {}
+USER_LAST_ACTION = {}  # Anti-flood rate limiting: user_id -> timestamp
+
+MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB max file size limit
+ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
+
+
+def check_rate_limit(user_id: int, limit_seconds: float = 1.0) -> bool:
+    """Anti-flood rate limiter: returns False if user is spamming commands."""
+    now = time.time()
+    last_time = USER_LAST_ACTION.get(user_id, 0)
+    if now - last_time < limit_seconds:
+        return False
+    USER_LAST_ACTION[user_id] = now
+    return True
+
+
+def sanitize_filename(filename: str) -> str:
+    """Security Hardening: Sanitize filename against Path Traversal vulnerabilities."""
+    clean_name = Path(filename).name  # Strips directory prefixes
+    clean_name = re.sub(r'[^a-zA-Z0-9_\ Khmer.-]', '_', clean_name)
+    return clean_name or "file.pdf"
 
 
 def load_catalog() -> dict:
-    """Load catalog dynamically from catalog.json file."""
+    """Load catalog dynamically from catalog.json file safely."""
     if not CATALOG_FILE.exists():
         return {"categories": {}}
     try:
@@ -76,7 +99,6 @@ def get_session_keyboard(session: dict) -> InlineKeyboardMarkup:
     """Generate inline keyboard for order settings."""
     copies = session.get("copies", 100)
 
-    # Copies options for invitations (e.g. 50, 100, 200, 300, 500)
     copy_buttons = [
         InlineKeyboardButton(
             f"{'✅ ' if copies == c else ''}{c} ធៀប", callback_data=f"set_copy_{c}"
@@ -84,7 +106,6 @@ def get_session_keyboard(session: dict) -> InlineKeyboardMarkup:
         for c in [50, 100, 200, 300, 500]
     ]
 
-    # Action buttons
     action_buttons = [
         InlineKeyboardButton("✅ បញ្ជូនការកុម្ម៉ង់ឥឡូវនេះ", callback_data="action_submit_order"),
         InlineKeyboardButton("🔙 ជ្រើសរើសម៉ូដផ្សេង", callback_data="inv_samples"),
@@ -117,9 +138,11 @@ def get_session_text(session: dict) -> str:
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command."""
+    """Handle /start command with anti-flood rate limit."""
     user = update.effective_user
-    
+    if not check_rate_limit(user.id):
+        return
+
     welcome_msg = (
         f"សួស្តី {user.first_name}! 👋\n\n"
         f"💍 **ស្វាគមន៍មកកាន់ សេវាកម្មបោះពុម្ពធៀបការ និងធៀបកម្មវិធីផ្សេងៗ**\n\n"
@@ -159,7 +182,6 @@ async def show_item_photo(query, context, cat_key: str, item_index: int):
         await query.edit_message_text(f"⚠️ ប្រភេទ `{category.get('name')}` មិនទាន់មានរូបថតគំរូធៀបនៅឡើយទេ។")
         return
 
-    # Keep index in valid bounds
     item_index = item_index % len(items)
     item = items[item_index]
 
@@ -258,18 +280,26 @@ async def show_upload_instruction(target, is_callback=True):
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle uploaded document file."""
+    """Handle uploaded document file securely."""
     user = update.effective_user
-    doc = update.message.document
-    file_name = doc.file_name or "invitation_design.pdf"
-    ext = Path(file_name).suffix.lower()
+    if not check_rate_limit(user.id):
+        return
 
-    if ext not in [".pdf", ".png", ".jpg", ".jpeg"]:
+    doc = update.message.document
+    if doc.file_size and doc.file_size > MAX_FILE_SIZE_BYTES:
+        await update.message.reply_text("⚠️ ឯកសារធំពេក! សូមផ្ញើឯកសារដែលមានទំហំតូចជាង 20MB។")
+        return
+
+    raw_file_name = doc.file_name or "invitation_design.pdf"
+    ext = Path(raw_file_name).suffix.lower()
+
+    if ext not in ALLOWED_EXTENSIONS:
         await update.message.reply_text(
             "⚠️ សូមផ្ញើឯកសារប្រភេទ **PDF** ឬ **រូបភាព (PNG/JPG)** នៃគំរូធៀបរបស់អ្នក!"
         )
         return
 
+    file_name = sanitize_filename(raw_file_name)
     status_msg = await update.message.reply_text("📥 កំពុងទាញយកឯកសារគំរូធៀប...")
 
     user_dir = config.DOWNLOAD_DIR / str(user.id)
@@ -296,9 +326,16 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle uploaded photo file."""
+    """Handle uploaded photo file securely."""
     user = update.effective_user
+    if not check_rate_limit(user.id):
+        return
+
     photo = update.message.photo[-1]
+    if photo.file_size and photo.file_size > MAX_FILE_SIZE_BYTES:
+        await update.message.reply_text("⚠️ រូបភាពធំពេក! សូមផ្ញើរូបភាពដែលមានទំហំតូចជាង 20MB។")
+        return
+
     file_name = f"invitation_{photo.file_id[:8]}.jpg"
 
     status_msg = await update.message.reply_text("📥 កំពុងទាញយករូបភាពគំរូធៀប...")
@@ -327,6 +364,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if not check_rate_limit(user.id):
+        return
+
     text = update.message.text
 
     if "ម៉ូដធៀប" in text:
@@ -341,8 +382,12 @@ async def handle_text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    user_id = query.from_user.id
+    if not check_rate_limit(user_id, 0.5):
+        await query.answer("⚠️ សូមរង់ចាំមួយភ្លែត...", show_alert=False)
+        return
 
+    await query.answer()
     data = query.data
 
     if data == "main_menu":
@@ -399,7 +444,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if 0 <= item_index < len(items):
             item = items[item_index]
-            user_id = query.from_user.id
             session = {
                 "design_key": item.get("id"),
                 "design_title": item.get("name"),
@@ -445,7 +489,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_contact(query, is_callback=True)
         return
 
-    user_id = query.from_user.id
     session = USER_SESSIONS.get(user_id)
 
     if not session:
@@ -484,7 +527,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "order_time": order_time
         }
 
-        # Save order details to orders directory
+        # Save order details to orders directory safely
         order_file = ORDERS_DIR / f"{order_record['order_id']}.json"
         with open(order_file, "w", encoding="utf-8") as f:
             json.dump(order_record, f, ensure_ascii=False, indent=2)
@@ -496,24 +539,46 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"▪️ **ម៉ូដធៀប**: {session.get('design_title')}\n"
             f"▪️ **ចំនួនកុម្ម៉ង់**: **{copies} ធៀប**\n"
             f"▪️ **តម្លៃសរុបប្រហែល**: **{total_price_text}**\n\n"
-            f"📩 ក្រុមការងាររបស់យើងបានទទួលព័ត៌មានកុម្ម៉ង់របស់អ្នករួចរាល់ហើយ។ ពួកយើងនឹងពិនិត្យមើល និងទាក់ទងមកលោកអ្នកវិញក្នុងពេលឆាប់ៗនេះ!\n\n"
+            f"📩 ក្រុមការងារ **ឆេងមុនីបោះពុម្ព** បានទទួលព័ត៌មានកុម្ម៉ង់របស់អ្នករួចរាល់ហើយ។ ពួកយើងនឹងពិនិត្យមើល និងទាក់ទងមកលោកអ្នកវិញក្នុងពេលឆាប់ៗនេះ!\n\n"
             f"សូមអរគុណ!",
             parse_mode="Markdown"
         )
+
+        # Send instant Real-Time Order Alert to Shop Admin if ADMIN_ID is configured
+        if config.ADMIN_ID:
+            try:
+                admin_alert = (
+                    f"🔔 **មានការកុម្ម៉ង់ធៀបថ្មី! (New Order)**\n\n"
+                    f"👤 **អតិថិជន**: {order_record['user_name']} ({order_record['username']})\n"
+                    f"🆔 **User ID**: `{user_id}`\n"
+                    f"📜 **ម៉ូដធៀប**: {order_record['design_title']}\n"
+                    f"🔢 **ចំនួន**: {copies} ធៀប ({total_price_text})\n"
+                    f"⏰ **ពេលកុម្ម៉ង់**: {order_time}"
+                )
+                await context.bot.send_message(chat_id=config.ADMIN_ID, text=admin_alert, parse_mode="Markdown")
+            except Exception as e:
+                logger.error(f"Error sending admin notification: {e}")
 
         if user_id in USER_SESSIONS:
             del USER_SESSIONS[user_id]
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Global Exception Handler: Catches all unexpected errors securely without leaking sensitive info."""
+    logger.error("Exception while handling an update:", exc_info=context.error)
+
+
 def main():
-    """Start the bot application."""
+    """Start the bot application securely."""
     token = config.BOT_TOKEN
     if not token or token == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
         print("ERROR: BOT_TOKEN is missing in .env file!")
         sys.exit(1)
 
-    print("Starting Multi-Folder Catalog Invitation Order Bot...")
+    print("Starting Hardened Telegram Invitation Order Bot...")
     app = ApplicationBuilder().token(token).build()
+
+    app.add_error_handler(error_handler)
 
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
@@ -521,7 +586,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_reply))
     app.add_handler(CallbackQueryHandler(handle_callback))
 
-    print("Bot is running and listening for Telegram messages... Press Ctrl+C to stop.")
+    print("Bot is running securely and listening for Telegram messages...")
     app.run_polling()
 
 
