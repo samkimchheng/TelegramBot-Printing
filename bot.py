@@ -9,7 +9,7 @@ import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 from pathlib import Path
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -413,6 +413,111 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await status_msg.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
 
 
+async def process_finalize_order(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, session: dict):
+    """Finalize order record, save to file, notify customer, and send multi-admin alert with phone number."""
+    user = update.effective_user
+    order_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    copies = session["copies"]
+    price_per_card = session.get("price_per_card", 0)
+    total_price_text = f"{copies * price_per_card:,} រៀល" if price_per_card > 0 else "ពិភាក្សាតាម File"
+    phone_text = session.get("phone", "N/A")
+
+    order_record = {
+        "order_id": f"ORD_{user_id}_{int(datetime.now().timestamp())}",
+        "user_id": user_id,
+        "user_name": user.full_name or user.username or "Customer",
+        "username": f"@{user.username}" if user.username else "N/A",
+        "phone": phone_text,
+        "design_title": session.get("design_title"),
+        "file_name": session.get("file_name"),
+        "file_path": session.get("file_path"),
+        "copies": copies,
+        "total_price": total_price_text,
+        "order_time": order_time
+    }
+
+    # Save order details to orders directory safely
+    order_file = ORDERS_DIR / f"{order_record['order_id']}.json"
+    with open(order_file, "w", encoding="utf-8") as f:
+        json.dump(order_record, f, ensure_ascii=False, indent=2)
+
+    import html
+    user_full_name = html.escape(user.full_name or user.first_name or "Customer")
+    username_str = html.escape(f"@{user.username}" if user.username else "N/A")
+    design_title = html.escape(str(session.get("design_title", "")))
+    safe_phone = html.escape(phone_text)
+
+    # Notify customer & clear reply keyboard
+    customer_msg = (
+        f"✅ <b>ទទួលបានការកុម្ម៉ង់ធៀបដោយជោគជ័យ!</b>\n\n"
+        f"▪️ <b>លេខកុម្ម៉ង់ (Order ID)</b>: <code>{order_record['order_id']}</code>\n"
+        f"▪️ <b>ម៉ូដធៀប</b>: {design_title}\n"
+        f"▪️ <b>ចំនួនកុម្ម៉ង់</b>: <b>{copies} ធៀប</b>\n"
+        f"▪️ <b>តម្លៃសរុបប្រហែល</b>: <b>{total_price_text}</b>\n"
+        f"📞 <b>លេខទូរស័ព្ទទំនាក់ទំនង</b>: <b>{safe_phone}</b>\n\n"
+        f"📩 ក្រុមការងារ <b>ឆេងមុនីបោះពុម្ព</b> បានទទួលព័ត៌មានកុម្ម៉ង់របស់អ្នករួចរាល់ហើយ។ ពួកយើងនឹងពិនិត្យមើល និងទាក់ទងមកលោកអ្នកវិញក្នុងពេលឆាប់ៗនេះ!\n\n"
+        f"សូមអរគុណ!"
+    )
+    await context.bot.send_message(
+        chat_id=user_id,
+        text=customer_msg,
+        reply_markup=ReplyKeyboardRemove(),
+        parse_mode="HTML"
+    )
+
+    # Send instant Real-Time Order Alert to Shop Admin(s)
+    admin_ids = getattr(config, "ADMIN_IDS", [])
+    if not admin_ids and getattr(config, "ADMIN_ID", None):
+        admin_ids = [config.ADMIN_ID]
+
+    if admin_ids:
+        admin_alert = (
+            f"🔔 <b>មានការកុម្ម៉ង់ធៀបថ្មី! (New Order Alert)</b>\n\n"
+            f"👤 <b>អតិថិជន</b>: {user_full_name} ({username_str})\n"
+            f"📞 <b>លេខទូរស័ព្ទ</b>: <b>{safe_phone}</b>\n"
+            f"🆔 <b>User ID</b>: <code>{user_id}</code>\n"
+            f"📜 <b>ម៉ូដធៀប</b>: {design_title}\n"
+            f"🔢 <b>ចំនួនកុម្ម៉ង់</b>: <b>{copies} ធៀប</b>\n"
+            f"💰 <b>តម្លៃសរុប</b>: <b>{total_price_text}</b>\n"
+            f"⏰ <b>កាលបរិច្ឆេទ</b>: {order_time}"
+        )
+        admin_kb = None
+        if user.username:
+            admin_kb = InlineKeyboardMarkup([[InlineKeyboardButton("💬 ចុច Chat ទៅអតិថិជន (t.me)", url=f"https://t.me/{user.username}")]])
+
+        for admin_id in admin_ids:
+            try:
+                await context.bot.send_message(chat_id=admin_id, text=admin_alert, reply_markup=admin_kb, parse_mode="HTML")
+                
+                # Forward customer's original message to admin
+                last_msg_id = LAST_USER_MESSAGES.get(user_id)
+                if last_msg_id:
+                    await context.bot.forward_message(chat_id=admin_id, from_chat_id=user_id, message_id=last_msg_id)
+            except Exception as e:
+                logger.error(f"Error sending admin notification to {admin_id}: {e}")
+
+    if user_id in USER_SESSIONS:
+        del USER_SESSIONS[user_id]
+
+
+async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle 1-tap phone contact sharing from customer."""
+    user = update.effective_user
+    if not check_rate_limit(user.id):
+        return
+    if update.message:
+        LAST_USER_MESSAGES[user.id] = update.message.message_id
+
+    contact = update.message.contact
+    phone = contact.phone_number if contact else "N/A"
+
+    session = USER_SESSIONS.get(user.id)
+    if session and session.get("awaiting_phone"):
+        session["phone"] = phone
+        session["awaiting_phone"] = False
+        await process_finalize_order(update, context, user.id, session)
+
+
 async def handle_text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if not check_rate_limit(user.id):
@@ -420,7 +525,14 @@ async def handle_text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         LAST_USER_MESSAGES[user.id] = update.message.message_id
 
-    text = update.message.text
+    text = update.message.text.strip()
+    session = USER_SESSIONS.get(user.id)
+
+    if session and session.get("awaiting_phone"):
+        session["phone"] = text
+        session["awaiting_phone"] = False
+        await process_finalize_order(update, context, user.id, session)
+        return
 
     if "ម៉ូដធៀប" in text:
         await show_categories(update, is_callback=False)
@@ -566,81 +678,27 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ ប្រតិបត្តិការកុម្ម៉ង់ត្រូវបានបោះបង់។")
 
     elif data == "action_submit_order":
-        user = query.from_user
-        order_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        copies = session["copies"]
-        price_per_card = session.get("price_per_card", 0)
-        total_price_text = f"{copies * price_per_card:,} រៀល" if price_per_card > 0 else "ពិភាក្សាតាម File"
-        
-        # Create order record
-        order_record = {
-            "order_id": f"ORD_{user_id}_{int(datetime.now().timestamp())}",
-            "user_id": user_id,
-            "user_name": user.full_name or user.username or "Customer",
-            "username": f"@{user.username}" if user.username else "N/A",
-            "design_title": session.get("design_title"),
-            "file_name": session.get("file_name"),
-            "file_path": session.get("file_path"),
-            "copies": copies,
-            "total_price": total_price_text,
-            "order_time": order_time
-        }
+        session["awaiting_phone"] = True
 
-        # Save order details to orders directory safely
-        order_file = ORDERS_DIR / f"{order_record['order_id']}.json"
-        with open(order_file, "w", encoding="utf-8") as f:
-            json.dump(order_record, f, ensure_ascii=False, indent=2)
-
-        import html
-        user_full_name = html.escape(user.full_name or user.first_name or "Customer")
-        username_str = html.escape(f"@{user.username}" if user.username else "N/A")
-        design_title = html.escape(str(session.get("design_title", "")))
-
-        # Notify customer
-        customer_msg = (
-            f"✅ <b>ទទួលបានការកុម្ម៉ង់ធៀបដោយជោគជ័យ!</b>\n\n"
-            f"▪️ <b>លេខកុម្ម៉ង់ (Order ID)</b>: <code>{order_record['order_id']}</code>\n"
-            f"▪️ <b>ម៉ូដធៀប</b>: {design_title}\n"
-            f"▪️ <b>ចំនួនកុម្ម៉ង់</b>: <b>{copies} ធៀប</b>\n"
-            f"▪️ <b>តម្លៃសរុបប្រហែល</b>: <b>{total_price_text}</b>\n\n"
-            f"📩 ក្រុមការងារ <b>ឆេងមុនីបោះពុម្ព</b> បានទទួលព័ត៌មានកុម្ម៉ង់របស់អ្នករួចរាល់ហើយ។ ពួកយើងនឹងពិនិត្យមើល និងទាក់ទងមកលោកអ្នកវិញក្នុងពេលឆាប់ៗនេះ!\n\n"
-            f"សូមអរគុណ!"
+        contact_kb = ReplyKeyboardMarkup(
+            [[KeyboardButton("📱 ចែករំលែកលេខទូរស័ព្ទ (Share Phone Number)", request_contact=True)]],
+            resize_keyboard=True,
+            one_time_keyboard=True
         )
-        await query.edit_message_text(customer_msg, parse_mode="HTML")
 
-        # Send instant Real-Time Order Alert to Shop Admin(s) if ADMIN_IDS is configured
-        admin_ids = getattr(config, "ADMIN_IDS", [])
-        if not admin_ids and getattr(config, "ADMIN_ID", None):
-            admin_ids = [config.ADMIN_ID]
+        if query.message:
+            await query.message.delete()
 
-        if admin_ids:
-            admin_alert = (
-                f"🔔 <b>មានការកុម្ម៉ង់ធៀបថ្មី! (New Order Alert)</b>\n\n"
-                f"👤 <b>អតិថិជន</b>: {user_full_name} ({username_str})\n"
-                f"🆔 <b>User ID</b>: <code>{user_id}</code>\n"
-                f"📜 <b>ម៉ូដធៀប</b>: {design_title}\n"
-                f"🔢 <b>ចំនួនកុម្ម៉ង់</b>: <b>{copies} ធៀប</b>\n"
-                f"💰 <b>តម្លៃសរុប</b>: <b>{total_price_text}</b>\n"
-                f"⏰ <b>កាលបរិច្ឆេទ</b>: {order_time}\n\n"
-                f"👇 <b>សារ Forward ចេញពីអតិថិជននៅខាងក្រោម (ចុចលើអក្សរ 'Forwarded from {user_full_name}' នៅលើសារខាងក្រោមដើម្បី Chat ទៅគាត់)</b>:"
-            )
-            admin_kb = None
-            if user.username:
-                admin_kb = InlineKeyboardMarkup([[InlineKeyboardButton("💬 ចុច Chat ទៅអតិថិជន (t.me)", url=f"https://t.me/{user.username}")]])
-
-            for admin_id in admin_ids:
-                try:
-                    await context.bot.send_message(chat_id=admin_id, text=admin_alert, reply_markup=admin_kb, parse_mode="HTML")
-                    
-                    # Forward customer's original message to admin so Telegram Desktop/Mobile natively displays clickable 'Forwarded from <Customer>' link!
-                    last_msg_id = LAST_USER_MESSAGES.get(user_id)
-                    if last_msg_id:
-                        await context.bot.forward_message(chat_id=admin_id, from_chat_id=user_id, message_id=last_msg_id)
-                except Exception as e:
-                    logger.error(f"Error sending admin notification to {admin_id}: {e}")
-
-        if user_id in USER_SESSIONS:
-            del USER_SESSIONS[user_id]
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=(
+                "📱 <b>សូមផ្ញើ ឬចែករំលែកលេខទូរស័ព្ទទំនាក់ទំនងរបស់អ្នក!</b>\n\n"
+                "ដើម្បីឱ្យក្រុមការងារ <b>ឆេងមុនីបោះពុម្ព</b> អាចទាក់ទងបញ្ជាក់ព័ត៌មានបោះពុម្ព និងដឹកជញ្ជូនជូនលោកអ្នកបានលឿនបំផុត។\n\n"
+                "👇 <b>ចុចប៊ូតុងខាងក្រោមដើម្បីចែករំលែក (ឬវាយបញ្ចូលលេខទូរស័ព្ទក្នុង Chat នេះ)</b>:"
+            ),
+            reply_markup=contact_kb,
+            parse_mode="HTML"
+        )
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -680,6 +738,7 @@ def main():
     app.add_error_handler(error_handler)
 
     app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(MessageHandler(filters.CONTACT, handle_contact))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_reply))
