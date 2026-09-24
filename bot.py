@@ -574,17 +574,22 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(order_file, "w", encoding="utf-8") as f:
             json.dump(order_record, f, ensure_ascii=False, indent=2)
 
+        import html
+        user_full_name = html.escape(user.full_name or user.first_name or "Customer")
+        username_str = html.escape(f"@{user.username}" if user.username else "N/A")
+        design_title = html.escape(str(session.get("design_title", "")))
+
         # Notify customer
-        await query.edit_message_text(
-            f"✅ **ទទួលបានការកុម្ម៉ង់ធៀបដោយជោគជ័យ!**\n\n"
-            f"▪️ **លេខកុម្ម៉ង់ (Order ID)**: `{order_record['order_id']}`\n"
-            f"▪️ **ម៉ូដធៀប**: {session.get('design_title')}\n"
-            f"▪️ **ចំនួនកុម្ម៉ង់**: **{copies} ធៀប**\n"
-            f"▪️ **តម្លៃសរុបប្រហែល**: **{total_price_text}**\n\n"
-            f"📩 ក្រុមការងារ **ឆេងមុនីបោះពុម្ព** បានទទួលព័ត៌មានកុម្ម៉ង់របស់អ្នករួចរាល់ហើយ។ ពួកយើងនឹងពិនិត្យមើល និងទាក់ទងមកលោកអ្នកវិញក្នុងពេលឆាប់ៗនេះ!\n\n"
-            f"សូមអរគុណ!",
-            parse_mode="Markdown"
+        customer_msg = (
+            f"✅ <b>ទទួលបានការកុម្ម៉ង់ធៀបដោយជោគជ័យ!</b>\n\n"
+            f"▪️ <b>លេខកុម្ម៉ង់ (Order ID)</b>: <code>{order_record['order_id']}</code>\n"
+            f"▪️ <b>ម៉ូដធៀប</b>: {design_title}\n"
+            f"▪️ <b>ចំនួនកុម្ម៉ង់</b>: <b>{copies} ធៀប</b>\n"
+            f"▪️ <b>តម្លៃសរុបប្រហែល</b>: <b>{total_price_text}</b>\n\n"
+            f"📩 ក្រុមការងារ <b>ឆេងមុនីបោះពុម្ព</b> បានទទួលព័ត៌មានកុម្ម៉ង់របស់អ្នករួចរាល់ហើយ។ ពួកយើងនឹងពិនិត្យមើល និងទាក់ទងមកលោកអ្នកវិញក្នុងពេលឆាប់ៗនេះ!\n\n"
+            f"សូមអរគុណ!"
         )
+        await query.edit_message_text(customer_msg, parse_mode="HTML")
 
         # Send instant Real-Time Order Alert to Shop Admin(s) if ADMIN_IDS is configured
         admin_ids = getattr(config, "ADMIN_IDS", [])
@@ -592,15 +597,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             admin_ids = [config.ADMIN_ID]
 
         if admin_ids:
-            user_link = f"[{order_record['user_name']}](tg://user?id={user_id})"
             admin_alert = (
-                f"🔔 **មានការកុម្ម៉ង់ធៀបថ្មី! (New Order Alert)**\n\n"
-                f"👤 **អតិថិជន**: {user_link} ({order_record['username']})\n"
-                f"🆔 **User ID**: `{user_id}`\n"
-                f"📜 **ម៉ូដធៀប**: {order_record['design_title']}\n"
-                f"🔢 **ចំនួនកុម្ម៉ង់**: **{copies} ធៀប**\n"
-                f"💰 **តម្លៃសរុប**: **{total_price_text}**\n"
-                f"⏰ **កាលបរិច្ឆេទ**: {order_time}"
+                f"🔔 <b>មានការកុម្ម៉ង់ធៀបថ្មី! (New Order Alert)</b>\n\n"
+                f"👤 <b>អតិថិជន</b>: <a href=\"tg://user?id={user_id}\">{user_full_name}</a> ({username_str})\n"
+                f"🆔 <b>User ID</b>: <code>{user_id}</code>\n"
+                f"📜 <b>ម៉ូដធៀប</b>: {design_title}\n"
+                f"🔢 <b>ចំនួនកុម្ម៉ង់</b>: <b>{copies} ធៀប</b>\n"
+                f"💰 <b>តម្លៃសរុប</b>: <b>{total_price_text}</b>\n"
+                f"⏰ <b>កាលបរិច្ឆេទ</b>: {order_time}"
             )
             admin_kb = None
             if user.username:
@@ -610,7 +614,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             for admin_id in admin_ids:
                 try:
-                    await context.bot.send_message(chat_id=admin_id, text=admin_alert, reply_markup=admin_kb, parse_mode="Markdown")
+                    await context.bot.send_message(chat_id=admin_id, text=admin_alert, reply_markup=admin_kb, parse_mode="HTML")
                 except Exception as e:
                     logger.error(f"Error sending admin notification to {admin_id}: {e}")
 

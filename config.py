@@ -7,9 +7,24 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
-# Support multiple admin Telegram IDs separated by comma (e.g. Husband & Wife)
-raw_admin_ids = os.getenv("ADMIN_ID", "647098577").strip()
-ADMIN_IDS = [aid.strip() for aid in raw_admin_ids.split(",") if aid.strip()]
+# Support multiple admin Telegram IDs (Husband: 647098577, Wife: 905596610)
+raw_admin_ids = os.getenv("ADMIN_ID", "647098577,905596610").strip()
+parsed_admins = [aid.strip() for aid in raw_admin_ids.split(",") if aid.strip()]
+
+# Hardcode default admins (Husband & Wife) so notifications work automatically on Cloud & Local
+default_admins = ["647098577", "905596610"]
+for default_id in default_admins:
+    if default_id not in parsed_admins:
+        parsed_admins.append(default_id)
+
+ADMIN_IDS = []
+for aid in parsed_admins:
+    try:
+        ADMIN_IDS.append(int(aid))
+    except ValueError:
+        ADMIN_IDS.append(aid)
+
+ADMIN_ID = raw_admin_ids
 
 PRINTER_NAME = os.getenv("PRINTER_NAME", "").strip()
 PRICE_PER_PAGE_BW = int(os.getenv("PRICE_PER_PAGE_BW", "200"))
