@@ -5,6 +5,7 @@ import time
 import logging
 import json
 import threading
+import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 from pathlib import Path
@@ -62,6 +63,22 @@ def start_health_server():
         server.serve_forever()
     except Exception as e:
         logger.error(f"Error starting health check server: {e}")
+
+
+def keep_alive_pinger():
+    """Self-pinger background thread to prevent Render Free Web Service from sleeping."""
+    url = os.getenv("RENDER_EXTERNAL_URL") or os.getenv("SELF_PING_URL")
+    if not url:
+        return
+    logger.info(f"Keep-Alive pinger started for URL: {url}")
+    time.sleep(15)
+    while True:
+        try:
+            urllib.request.urlopen(url, timeout=10)
+            logger.info("Keep-Alive ping sent successfully to prevent sleep.")
+        except Exception as e:
+            logger.error(f"Keep-Alive ping error: {e}")
+        time.sleep(240)  # Ping every 4 minutes (Render sleeps after 15 min)
 
 
 def check_rate_limit(user_id: int, limit_seconds: float = 1.0) -> bool:
@@ -616,6 +633,9 @@ def main():
 
     # Start background HTTP health server for Render Cloud Free Web Service
     threading.Thread(target=start_health_server, daemon=True).start()
+
+    # Start Keep-Alive pinger to prevent Render Web Service from sleeping
+    threading.Thread(target=keep_alive_pinger, daemon=True).start()
 
     app = ApplicationBuilder().token(token).post_init(post_init).build()
 
