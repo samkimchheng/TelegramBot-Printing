@@ -609,8 +609,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             admin_kb = None
             if user.username:
                 admin_kb = InlineKeyboardMarkup([[InlineKeyboardButton("💬 ចុច Chat ទៅអតិថិជនភ្លាមៗ", url=f"https://t.me/{user.username}")]])
-            else:
-                admin_kb = InlineKeyboardMarkup([[InlineKeyboardButton("💬 ចុច Chat ទៅអតិថិជន (tg://user)", url=f"tg://user?id={user_id}")]])
 
             for admin_id in admin_ids:
                 try:
