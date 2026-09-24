@@ -229,14 +229,20 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def safe_edit_or_reply(target, text, reply_markup=None, parse_mode="Markdown", is_callback=True):
     """Safely edit message or delete photo message and send new text message without raising Telegram BadRequest errors."""
+    bot = target.get_bot() if hasattr(target, "get_bot") else None
+    
     if is_callback:
         msg_obj = target.message if hasattr(target, "message") else target
+        if not bot and msg_obj and hasattr(msg_obj, "get_bot"):
+            bot = msg_obj.get_bot()
+
         if msg_obj and msg_obj.photo:
             try:
                 await msg_obj.delete()
             except Exception:
                 pass
-            await target.bot.send_message(chat_id=msg_obj.chat_id, text=text, reply_markup=reply_markup, parse_mode=parse_mode)
+            if bot:
+                await bot.send_message(chat_id=msg_obj.chat_id, text=text, reply_markup=reply_markup, parse_mode=parse_mode)
         else:
             try:
                 await target.edit_message_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
@@ -246,7 +252,8 @@ async def safe_edit_or_reply(target, text, reply_markup=None, parse_mode="Markdo
                         await msg_obj.delete()
                     except Exception:
                         pass
-                    await target.bot.send_message(chat_id=msg_obj.chat_id, text=text, reply_markup=reply_markup, parse_mode=parse_mode)
+                    if bot:
+                        await bot.send_message(chat_id=msg_obj.chat_id, text=text, reply_markup=reply_markup, parse_mode=parse_mode)
     else:
         if hasattr(target, "message") and target.message:
             await target.message.reply_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
