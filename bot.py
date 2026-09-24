@@ -465,7 +465,7 @@ async def process_finalize_order(update: Update, context: ContextTypes.DEFAULT_T
         parse_mode="HTML"
     )
 
-    # Send instant Real-Time Order Alert to Shop Admin(s)
+    # Send instant Real-Time Order Alert with Design Photo to Shop Admin(s)
     admin_ids = getattr(config, "ADMIN_IDS", [])
     if not admin_ids and getattr(config, "ADMIN_ID", None):
         admin_ids = [config.ADMIN_ID]
@@ -485,9 +485,44 @@ async def process_finalize_order(update: Update, context: ContextTypes.DEFAULT_T
         if user.username:
             admin_kb = InlineKeyboardMarkup([[InlineKeyboardButton("💬 ចុច Chat ទៅអតិថិជន (t.me)", url=f"https://t.me/{user.username}")]])
 
+        img_file_path = session.get("file_path")
+        full_img_path = (config.BASE_DIR / img_file_path) if img_file_path else None
+
+        photo_data = None
+        is_pdf = False
+        if full_img_path and full_img_path.exists():
+            try:
+                ext = full_img_path.suffix.lower()
+                photo_data = full_img_path.read_bytes()
+                if ext == ".pdf":
+                    is_pdf = True
+            except Exception as e:
+                logger.error(f"Error reading design image file: {e}")
+
         for admin_id in admin_ids:
             try:
-                await context.bot.send_message(chat_id=admin_id, text=admin_alert, reply_markup=admin_kb, parse_mode="HTML")
+                if photo_data:
+                    import io
+                    file_obj = io.BytesIO(photo_data)
+                    file_obj.name = full_img_path.name
+                    if is_pdf:
+                        await context.bot.send_document(
+                            chat_id=admin_id,
+                            document=file_obj,
+                            caption=admin_alert,
+                            reply_markup=admin_kb,
+                            parse_mode="HTML"
+                        )
+                    else:
+                        await context.bot.send_photo(
+                            chat_id=admin_id,
+                            photo=file_obj,
+                            caption=admin_alert,
+                            reply_markup=admin_kb,
+                            parse_mode="HTML"
+                        )
+                else:
+                    await context.bot.send_message(chat_id=admin_id, text=admin_alert, reply_markup=admin_kb, parse_mode="HTML")
                 
                 # Forward customer's original message to admin
                 last_msg_id = LAST_USER_MESSAGES.get(user_id)
