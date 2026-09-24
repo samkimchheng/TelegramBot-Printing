@@ -606,13 +606,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if admin_ids:
             admin_alert = (
                 f"🔔 <b>មានការកុម្ម៉ង់ធៀបថ្មី! (New Order Alert)</b>\n\n"
-                f"👤 <b>អតិថិជន</b>: <a href=\"tg://user?id={user_id}\"><b>{user_full_name}</b></a> ({username_str})\n"
+                f"👤 <b>អតិថិជន</b>: <a href=\"tg://user?id={user_id}\">{user_full_name}</a> ({username_str})\n"
                 f"🆔 <b>User ID</b>: <code>{user_id}</code>\n"
                 f"📜 <b>ម៉ូដធៀប</b>: {design_title}\n"
                 f"🔢 <b>ចំនួនកុម្ម៉ង់</b>: <b>{copies} ធៀប</b>\n"
                 f"💰 <b>តម្លៃសរុប</b>: <b>{total_price_text}</b>\n"
                 f"⏰ <b>កាលបរិច្ឆេទ</b>: {order_time}\n\n"
-                f"👉 <b>របៀបទាក់ទង</b>: ចុចលើឈ្មោះ <a href=\"tg://user?id={user_id}\"><b>{user_full_name}</b></a> (អក្សរពណ៌ខៀវ) ខាងលើដើម្បី Chat!"
+                f"👉 <b>របៀបទាក់ទង</b>: ចុចលើឈ្មោះ <a href=\"tg://user?id={user_id}\">{user_full_name}</a> (អក្សរពណ៌ខៀវ) ខាងលើដើម្បី Chat!"
             )
             if user.username:
                 admin_kb = InlineKeyboardMarkup([[InlineKeyboardButton("💬 ចុច Chat ទៅអតិថិជន (t.me)", url=f"https://t.me/{user.username}")]])
