@@ -589,15 +589,23 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Send instant Real-Time Order Alert to Shop Admin if ADMIN_ID is configured
         if config.ADMIN_ID:
             try:
+                user_link = f"[{order_record['user_name']}](tg://user?id={user_id})"
                 admin_alert = (
-                    f"🔔 **មានការកុម្ម៉ង់ធៀបថ្មី! (New Order)**\n\n"
-                    f"👤 **អតិថិជន**: {order_record['user_name']} ({order_record['username']})\n"
+                    f"🔔 **មានការកុម្ម៉ង់ធៀបថ្មី! (New Order Alert)**\n\n"
+                    f"👤 **អតិថិជន**: {user_link} ({order_record['username']})\n"
                     f"🆔 **User ID**: `{user_id}`\n"
                     f"📜 **ម៉ូដធៀប**: {order_record['design_title']}\n"
-                    f"🔢 **ចំនួន**: {copies} ធៀប ({total_price_text})\n"
-                    f"⏰ **ពេលកុម្ម៉ង់**: {order_time}"
+                    f"🔢 **ចំនួនកុម្ម៉ង់**: **{copies} ធៀប**\n"
+                    f"💰 **តម្លៃសរុប**: **{total_price_text}**\n"
+                    f"⏰ **កាលបរិច្ឆេទ**: {order_time}"
                 )
-                await context.bot.send_message(chat_id=config.ADMIN_ID, text=admin_alert, parse_mode="Markdown")
+                admin_kb = None
+                if user.username:
+                    admin_kb = InlineKeyboardMarkup([[InlineKeyboardButton("💬 ចុច Chat ទៅអតិថិជនភ្លាមៗ", url=f"https://t.me/{user.username}")]])
+                else:
+                    admin_kb = InlineKeyboardMarkup([[InlineKeyboardButton("💬 ចុច Chat ទៅអតិថិជន (tg://user)", url=f"tg://user?id={user_id}")]])
+
+                await context.bot.send_message(chat_id=config.ADMIN_ID, text=admin_alert, reply_markup=admin_kb, parse_mode="Markdown")
             except Exception as e:
                 logger.error(f"Error sending admin notification: {e}")
 
