@@ -227,6 +227,31 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def safe_edit_or_reply(target, text, reply_markup=None, parse_mode="Markdown", is_callback=True):
+    """Safely edit message or delete photo message and send new text message without raising Telegram BadRequest errors."""
+    if is_callback:
+        msg_obj = target.message if hasattr(target, "message") else target
+        if msg_obj and msg_obj.photo:
+            try:
+                await msg_obj.delete()
+            except Exception:
+                pass
+            await target.bot.send_message(chat_id=msg_obj.chat_id, text=text, reply_markup=reply_markup, parse_mode=parse_mode)
+        else:
+            try:
+                await target.edit_message_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+            except Exception:
+                if msg_obj:
+                    try:
+                        await msg_obj.delete()
+                    except Exception:
+                        pass
+                    await target.bot.send_message(chat_id=msg_obj.chat_id, text=text, reply_markup=reply_markup, parse_mode=parse_mode)
+    else:
+        if hasattr(target, "message") and target.message:
+            await target.message.reply_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+
+
 async def show_categories(target, is_callback=True):
     catalog = load_catalog()
     msg = (
@@ -234,22 +259,19 @@ async def show_categories(target, is_callback=True):
         "សូមជ្រើសរើសប្រភេទទិន្នន័យម៉ូដធៀបខាងក្រោម ដើម្បីមើលរូបថត និងតម្លៃកំណត់៖"
     )
     kb = get_categories_keyboard(catalog)
-    if is_callback:
-        await target.edit_message_text(msg, reply_markup=kb, parse_mode="Markdown")
-    else:
-        await target.message.reply_text(msg, reply_markup=kb, parse_mode="Markdown")
+    await safe_edit_or_reply(target, msg, reply_markup=kb, parse_mode="Markdown", is_callback=is_callback)
 
 
 async def show_item_photo(query, context, cat_key: str, item_index: int):
     catalog = load_catalog()
     category = catalog.get("categories", {}).get(cat_key)
     if not category:
-        await query.edit_message_text("⚠️ មិនមានប្រភេទទិន្នន័យនេះឡើយ។")
+        await safe_edit_or_reply(query, "⚠️ មិនមានប្រភេទទិន្នន័យនេះឡើយ。", is_callback=True)
         return
 
     items = category.get("items", [])
     if not items:
-        await query.edit_message_text(f"⚠️ ប្រភេទ `{category.get('name')}` មិនទាន់មានរូបថតគំរូធៀបនៅឡើយទេ។")
+        await safe_edit_or_reply(query, f"⚠️ ប្រភេទ `{category.get('name')}` មិនទាន់មានរូបថតគំរូធៀបនៅឡើយទេ។", is_callback=True)
         return
 
     item_index = item_index % len(items)
@@ -284,7 +306,10 @@ async def show_item_photo(query, context, cat_key: str, item_index: int):
     ])
 
     chat_id = query.message.chat_id
-    await query.message.delete()
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
 
     if img_path.exists():
         with open(img_path, "rb") as photo_file:
@@ -314,10 +339,7 @@ async def show_promos(target, is_callback=True):
         "📩 កុម្ម៉ង់កាន់តែច្រើន បញ្ចុះតម្លៃកាន់តែពិសេស!"
     )
     back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ត្រឡប់ទៅម៉ឺនុយដើម", callback_data="main_menu")]])
-    if is_callback:
-        await target.edit_message_text(msg, reply_markup=back_kb, parse_mode="Markdown")
-    else:
-        await target.message.reply_text(msg, reply_markup=back_kb, parse_mode="Markdown")
+    await safe_edit_or_reply(target, msg, reply_markup=back_kb, parse_mode="Markdown", is_callback=is_callback)
 
 
 async def show_contact(target, is_callback=True):
@@ -330,23 +352,17 @@ async def show_contact(target, is_callback=True):
         "⏰ បើកទទួលការកុម្ម៉ង់រៀងរាល់ថ្ងៃ ពីម៉ោង 7:30 ព្រឹក - 7:00 យប់!"
     )
     back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ត្រឡប់ទៅម៉ឺនុយដើម", callback_data="main_menu")]])
-    if is_callback:
-        await target.edit_message_text(msg, reply_markup=back_kb, parse_mode="Markdown")
-    else:
-        await target.message.reply_text(msg, reply_markup=back_kb, parse_mode="Markdown")
+    await safe_edit_or_reply(target, msg, reply_markup=back_kb, parse_mode="Markdown", is_callback=is_callback)
 
 
 async def show_upload_instruction(target, is_callback=True):
     msg = (
         "📩 **សេវាទទួលកុម្ម៉ង់បោះពុម្ពធៀបផ្ទាល់ខ្លួន**\n\n"
         "📥 **សូមផ្ញើ File គំរូធៀប (PDF) ឬរូបភាព (JPG/PNG) ចូលក្នុង Chat នេះ!**\n\n"
-        "បន្ទាប់មក អ្នកអាចជ្រើសរើសចំនួនធៀប (៥០, ១០០, ២០០, ៣០០, ៥០០...) រួចចុចបញ្ជូនការកុម្ម៉ង់បានភ្លាមៗ។"
+        "បន្ទាប់មក អ្នកអាចជ្រើសរើសចំនួនធៀប (៥០, ១០០, ២០០, ៣០០, ៥۰۰...) រួចចុចបញ្ជូនការកុម្ម៉ង់បានភ្លាមៗ..."
     )
     back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ត្រឡប់ទៅម៉ឺនុយដើម", callback_data="main_menu")]])
-    if is_callback:
-        await target.edit_message_text(msg, reply_markup=back_kb, parse_mode="Markdown")
-    else:
-        await target.message.reply_text(msg, reply_markup=back_kb, parse_mode="Markdown")
+    await safe_edit_or_reply(target, msg, reply_markup=back_kb, parse_mode="Markdown", is_callback=is_callback)
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
