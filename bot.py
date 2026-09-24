@@ -37,6 +37,7 @@ CATALOG_FILE = config.BASE_DIR / "catalog.json"
 # Temporary user order sessions & rate limiters
 USER_SESSIONS = {}
 USER_LAST_ACTION = {}  # Anti-flood rate limiting: user_id -> timestamp
+LAST_USER_MESSAGES = {}  # Track user message IDs to forward for direct 1-click admin chat link
 
 MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB max file size limit
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
@@ -185,6 +186,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_rate_limit(user.id):
         return
 
+    if update.message:
+        LAST_USER_MESSAGES[user.id] = update.message.message_id
+
     welcome_msg = (
         f"សួស្តី {user.first_name}! 👋\n\n"
         f"💍 **ស្វាគមន៍មកកាន់ សេវាកម្មបោះពុម្ពធៀបការ និងធៀបកម្មវិធីផ្សេងៗ**\n\n"
@@ -326,6 +330,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if not check_rate_limit(user.id):
         return
+    if update.message:
+        LAST_USER_MESSAGES[user.id] = update.message.message_id
 
     doc = update.message.document
     if doc.file_size and doc.file_size > MAX_FILE_SIZE_BYTES:
@@ -372,6 +378,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if not check_rate_limit(user.id):
         return
+    if update.message:
+        LAST_USER_MESSAGES[user.id] = update.message.message_id
 
     photo = update.message.photo[-1]
     if photo.file_size and photo.file_size > MAX_FILE_SIZE_BYTES:
@@ -409,6 +417,8 @@ async def handle_text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if not check_rate_limit(user.id):
         return
+    if update.message:
+        LAST_USER_MESSAGES[user.id] = update.message.message_id
 
     text = update.message.text
 
@@ -606,22 +616,26 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if admin_ids:
             admin_alert = (
                 f"🔔 <b>មានការកុម្ម៉ង់ធៀបថ្មី! (New Order Alert)</b>\n\n"
-                f"👤 <b>អតិថិជន</b>: <a href=\"tg://user?id={user_id}\">{user_full_name}</a> ({username_str})\n"
+                f"👤 <b>អតិថិជន</b>: {user_full_name} ({username_str})\n"
                 f"🆔 <b>User ID</b>: <code>{user_id}</code>\n"
                 f"📜 <b>ម៉ូដធៀប</b>: {design_title}\n"
                 f"🔢 <b>ចំនួនកុម្ម៉ង់</b>: <b>{copies} ធៀប</b>\n"
                 f"💰 <b>តម្លៃសរុប</b>: <b>{total_price_text}</b>\n"
                 f"⏰ <b>កាលបរិច្ឆេទ</b>: {order_time}\n\n"
-                f"👉 <b>របៀបទាក់ទង</b>: ចុចលើឈ្មោះ <a href=\"tg://user?id={user_id}\">{user_full_name}</a> (អក្សរពណ៌ខៀវ) ខាងលើដើម្បី Chat!"
+                f"👇 <b>សារ Forward ចេញពីអតិថិជននៅខាងក្រោម (ចុចលើអក្សរ 'Forwarded from {user_full_name}' នៅលើសារខាងក្រោមដើម្បី Chat ទៅគាត់)</b>:"
             )
+            admin_kb = None
             if user.username:
                 admin_kb = InlineKeyboardMarkup([[InlineKeyboardButton("💬 ចុច Chat ទៅអតិថិជន (t.me)", url=f"https://t.me/{user.username}")]])
-            else:
-                admin_kb = InlineKeyboardMarkup([[InlineKeyboardButton("💬 ចុចលើឈ្មោះអតិថិជន (អក្សរពណ៌ខៀវ) ខាងលើ", callback_data="no_username_info")]])
 
             for admin_id in admin_ids:
                 try:
                     await context.bot.send_message(chat_id=admin_id, text=admin_alert, reply_markup=admin_kb, parse_mode="HTML")
+                    
+                    # Forward customer's original message to admin so Telegram Desktop/Mobile natively displays clickable 'Forwarded from <Customer>' link!
+                    last_msg_id = LAST_USER_MESSAGES.get(user_id)
+                    if last_msg_id:
+                        await context.bot.forward_message(chat_id=admin_id, from_chat_id=user_id, message_id=last_msg_id)
                 except Exception as e:
                     logger.error(f"Error sending admin notification to {admin_id}: {e}")
 
