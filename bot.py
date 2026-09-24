@@ -7,6 +7,7 @@ import json
 import threading
 import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
+import html
 from datetime import datetime
 from pathlib import Path
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
@@ -33,6 +34,7 @@ ORDERS_DIR = config.BASE_DIR / "orders"
 ORDERS_DIR.mkdir(parents=True, exist_ok=True)
 
 BANNED_USERS_FILE = config.BASE_DIR / "banned_users.json"
+CATALOG_FILE = config.BASE_DIR / "catalog.json"
 
 
 def load_banned_users() -> set:
@@ -187,19 +189,19 @@ def get_session_keyboard(session: dict) -> InlineKeyboardMarkup:
 
 def get_session_text(session: dict) -> str:
     """Format session status text in Khmer."""
-    design_title = session.get("design_title", "គំរូផ្ទាល់ខ្លួន (Custom Design)")
+    design_title = html.escape(str(session.get("design_title", "គំរូផ្ទាល់ខ្លួន (Custom Design)")))
     price_per_card = session.get("price_per_card", 0)
     copies = session.get("copies", 100)
     
     total_price_text = f"{copies * price_per_card:,} រៀល" if price_per_card > 0 else "ពិភាក្សាតាម File"
 
     text = (
-        f"💍 **ព័ត៌មានកុម្ម៉ង់ធៀប**\n\n"
-        f"▪️ **ម៉ូដដែលបានជ្រើសរើស**: {design_title}\n"
-        f"▪️ **តម្លៃក្នុង ១ ធៀប**: {price_per_card:,} រៀល\n"
-        f"▪️ **ចំនួនធៀបកុម្ម៉ង់**: **{copies} ធៀប**\n"
-        f"▪️ **តម្លៃសរុបប្រហែល**: **{total_price_text}**\n\n"
-        f"👇 សូមជ្រើសរើសចំនួនធៀប រួចចុច **'បញ្ជូនការកុម្ម៉ង់ឥឡូវនេះ'**:"
+        f"💍 <b>ព័ត៌មានកុម្ម៉ង់ធៀប</b>\n\n"
+        f"▪️ <b>ម៉ូដដែលបានជ្រើសរើស</b>: {design_title}\n"
+        f"▪️ <b>តម្លៃក្នុង ១ ធៀប</b>: {price_per_card:,} រៀល\n"
+        f"▪️ <b>ចំនួនធៀបកុម្ម៉ង់</b>: <b>{copies} ធៀប</b>\n"
+        f"▪️ <b>តម្លៃសរុបប្រហែល</b>: <b>{total_price_text}</b>\n\n"
+        f"👇 សូមជ្រើសរើសចំនួនធៀប រួចចុច <b>'បញ្ជូនការកុម្ម៉ង់ឥឡូវនេះ'</b>:"
     )
     return text
 
@@ -213,9 +215,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         LAST_USER_MESSAGES[user.id] = update.message.message_id
 
+    first_name_safe = html.escape(user.first_name or "អតិថិជន")
+
     welcome_msg = (
-        f"សួស្តី {user.first_name}! 👋\n\n"
-        f"💍 **ស្វាគមន៍មកកាន់ សេវាកម្មបោះពុម្ពធៀបការ និងធៀបកម្មវិធីផ្សេងៗ**\n\n"
+        f"សួស្តី {first_name_safe}! 👋\n\n"
+        f"💍 <b>ស្វាគមន៍មកកាន់ សេវាកម្មបោះពុម្ពធៀបការ និងធៀបកម្មវិធីផ្សេងៗ</b>\n\n"
         f"ពួកយើងមានសេវាកម្មរចនា និងបោះពុម្ពធៀបអាពាហ៍ពិពាហ៍ ធៀបឡើងផ្ទះ ធៀបខួបកំណើត និងធៀបកម្មវិធីគ្រប់ប្រភេទ ដោយគុណភាពខ្ពស់ និងតម្លៃសមរម្យបំផុត!\n\n"
         f"សូមជ្រើសរើសជម្រើសខាងក្រោម៖"
     )
@@ -223,11 +227,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         welcome_msg,
         reply_markup=get_invitation_menu_keyboard(),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
-async def safe_edit_or_reply(target, text, reply_markup=None, parse_mode="Markdown", is_callback=True):
+async def safe_edit_or_reply(target, text, reply_markup=None, parse_mode="HTML", is_callback=True):
     """Safely edit message or delete photo message and send new text message without raising Telegram BadRequest errors."""
     bot = target.get_bot() if hasattr(target, "get_bot") else None
     
@@ -262,11 +266,11 @@ async def safe_edit_or_reply(target, text, reply_markup=None, parse_mode="Markdo
 async def show_categories(target, is_callback=True):
     catalog = load_catalog()
     msg = (
-        "📂 **កាតាឡុកប្រភេទទិន្នន័យម៉ូដធៀប (Invitation Categories)**\n\n"
+        "📂 <b>កាតាឡុកប្រភេទទិន្នន័យម៉ូដធៀប (Invitation Categories)</b>\n\n"
         "សូមជ្រើសរើសប្រភេទទិន្នន័យម៉ូដធៀបខាងក្រោម ដើម្បីមើលរូបថត និងតម្លៃកំណត់៖"
     )
     kb = get_categories_keyboard(catalog)
-    await safe_edit_or_reply(target, msg, reply_markup=kb, parse_mode="Markdown", is_callback=is_callback)
+    await safe_edit_or_reply(target, msg, reply_markup=kb, parse_mode="HTML", is_callback=is_callback)
 
 
 async def show_item_photo(query, context, cat_key: str, item_index: int):
@@ -278,7 +282,8 @@ async def show_item_photo(query, context, cat_key: str, item_index: int):
 
     items = category.get("items", [])
     if not items:
-        await safe_edit_or_reply(query, f"⚠️ ប្រភេទ `{category.get('name')}` មិនទាន់មានរូបថតគំរូធៀបនៅឡើយទេ។", is_callback=True)
+        cat_name_safe = html.escape(str(category.get('name', '')))
+        await safe_edit_or_reply(query, f"⚠️ ប្រភេទ <code>{cat_name_safe}</code> មិនទាន់មានរូបថតគំរូធៀបនៅឡើយទេ។", is_callback=True)
         return
 
     item_index = item_index % len(items)
@@ -293,10 +298,10 @@ async def show_item_photo(query, context, cat_key: str, item_index: int):
     img_path = config.BASE_DIR / img_rel_path
 
     caption = (
-        f"📸 **{item_name}** ({cat_name})\n\n"
-        f"📝 **ព័ត៌មានលម្អិត**: {desc}\n"
-        f"💰 **តម្លៃកំណត់**: **{price:,} រៀល / ធៀប**\n\n"
-        f"🎁 *ប្រូម៉ូសិន*: ឥតគិតថ្លៃសេវារចនា (Free Design) សម្រាប់ការកុម្ម៉ង់ចាប់ពី ២០០ ធៀបឡើងទៅ!"
+        f"📸 <b>{html.escape(str(item_name))}</b> ({html.escape(str(cat_name))})\n\n"
+        f"📝 <b>ព័ត៌មានលម្អិត</b>: {html.escape(str(desc))}\n"
+        f"💰 <b>តម្លៃកំណត់</b>: <b>{price:,} រៀល / ធៀប</b>\n\n"
+        f"🎁 <i>ប្រូម៉ូសិន</i>: ឥតគិតថ្លៃសេវារចនា (Free Design) សម្រាប់ការកុម្ម៉ង់ចាប់ពី ២០០ ធៀបឡើងទៅ!"
     )
 
     prev_idx = (item_index - 1) % len(items)
@@ -315,64 +320,65 @@ async def show_item_photo(query, context, cat_key: str, item_index: int):
     msg_obj = query.message if hasattr(query, "message") and query.message else None
     chat_id = msg_obj.chat_id if msg_obj else (query.effective_chat.id if hasattr(query, "effective_chat") else None)
 
-    if msg_obj:
+    new_msg = None
+    if img_path.exists():
+        with open(img_path, "rb") as photo_file:
+            new_msg = await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=photo_file,
+                caption=caption,
+                reply_markup=kb,
+                parse_mode="HTML"
+            )
+    else:
+        new_msg = await context.bot.send_message(
+            chat_id=chat_id,
+            text=caption,
+            reply_markup=kb,
+            parse_mode="HTML"
+        )
+
+    if new_msg and msg_obj and msg_obj.message_id != new_msg.message_id:
         try:
             await msg_obj.delete()
         except Exception:
             pass
 
-    if img_path.exists():
-        with open(img_path, "rb") as photo_file:
-            await context.bot.send_photo(
-                chat_id=chat_id,
-                photo=photo_file,
-                caption=caption,
-                reply_markup=kb,
-                parse_mode="Markdown"
-            )
-    else:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=caption,
-            reply_markup=kb,
-            parse_mode="Markdown"
-        )
-
 
 async def show_promos(target, is_callback=True):
     msg = (
-        "🎁 **កញ្ចប់ប្រូម៉ូសិនពិសេស សម្រាប់ធៀបការ & កម្មវិធី**\n\n"
-        "🎉 **ការផ្តល់ជូនពិសេស**:\n"
-        "១. **FREE Design**: ឥតគិតថ្លៃសេវារចនាម៉ូដធៀប សម្រាប់ការកុម្ម៉ង់ចាប់ពី ២០០ ធៀបឡើងទៅ!\n"
-        "២. **FREE Welcome Board Frame**: ថែមជូនស៊ុមរូបថតស្វាគមន៍មុខរោងការ ១ ឈុតដោយឥតគិតថ្លៃ!\n"
-        "៣. **FREE Delivery**: សេវាដឹកជញ្ជូនដល់ទីកន្លែងសម្រាប់អតិថិជនក្នុងតំបន់!\n\n"
+        "🎁 <b>កញ្ចប់ប្រូម៉ូសិនពិសេស សម្រាប់ធៀបការ & កម្មវិធី</b>\n\n"
+        "🎉 <b>ការផ្តល់ជូនពិសេស</b>:\n"
+        "១. <b>FREE Design</b>: ឥតគិតថ្លៃសេវារចនាម៉ូដធៀប សម្រាប់ការកុម្ម៉ង់ចាប់ពី ២០០ ធៀបឡើងទៅ!\n"
+        "២. <b>FREE Welcome Board Frame</b>: ថែមជូនស៊ុមរូបថតស្វាគមន៍មុខរោងការ ១ ឈុតដោយឥតគិតថ្លៃ!\n"
+        "៣. <b>FREE Delivery</b>: សេវាដឹកជញ្ជូនដល់ទីកន្លែងសម្រាប់អតិថិជនក្នុងតំបន់!\n\n"
         "📩 កុម្ម៉ង់កាន់តែច្រើន បញ្ចុះតម្លៃកាន់តែពិសេស!"
     )
     back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ត្រឡប់ទៅម៉ឺនុយដើម", callback_data="main_menu")]])
-    await safe_edit_or_reply(target, msg, reply_markup=back_kb, parse_mode="Markdown", is_callback=is_callback)
+    await safe_edit_or_reply(target, msg, reply_markup=back_kb, parse_mode="HTML", is_callback=is_callback)
 
 
 async def show_contact(target, is_callback=True):
     msg = (
-        "📞 **ព័ត៌មានទំនាក់ទំនង & ពិគ្រោះយោបល់**\n\n"
-        "🏪 **ឆេងមុនីបោះពុម្ព**\n"
-        "☎️ **ទូរស័ព្ទ**: 093586024 / 078515484\n"
-        "💬 **Telegram**: https://t.me/Kimchheng12\n"
-        "📍 **ទីតាំង**: ខាងជើងវត្តយាកាបក្រោម / ទល់មុខតារាងបាល់ទះកុងចេក\n\n"
+        "📞 <b>ព័ត៌មានទំនាក់ទំនង & ពិគ្រោះយោបល់</b>\n\n"
+        "🏪 <b>ឆេងមុនីបោះពុម្ព</b>\n"
+        "☎️ <b>ទូរស័ព្ទ</b>: 093586024 / 078515484\n"
+        "💬 <b>Telegram</b>: https://t.me/Kimchheng12\n"
+        "📍 <b>ទីតាំង</b>: ខាងជើងវត្តយាកាបក្រោម / ទល់មុខតារាងបាល់ទះកុងចេក\n\n"
         "⏰ បើកទទួលការកុម្ម៉ង់រៀងរាល់ថ្ងៃ ពីម៉ោង 7:30 ព្រឹក - 7:00 យប់!"
     )
     back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ត្រឡប់ទៅម៉ឺនុយដើម", callback_data="main_menu")]])
-    await safe_edit_or_reply(target, msg, reply_markup=back_kb, parse_mode="Markdown", is_callback=is_callback)
+    await safe_edit_or_reply(target, msg, reply_markup=back_kb, parse_mode="HTML", is_callback=is_callback)
 
 
 async def show_upload_instruction(target, is_callback=True):
     msg = (
-        "📩 **សេវាទទួលកុម្ម៉ង់បោះពុម្ពធៀបផ្ទាល់ខ្លួន**\n\n"
-        "📥 **សូមផ្ញើ File គំរូធៀប (PDF) ឬរូបភាព (JPG/PNG) ចូលក្នុង Chat នេះ!**\n\n"
-        "បន្ទាប់មក អ្នកអាចជ្រើសរើសចំនួនធៀប (៥០, ១០០, ២០០, ៣០០, ៥۰۰...) រួចចុចបញ្ជូនការកុម្ម៉ង់បានភ្លាមៗ..."
+        "📩 <b>សេវាទទួលកុម្ម៉ង់បោះពុម្ពធៀបផ្ទាល់ខ្លួន</b>\n\n"
+        "📥 <b>សូមផ្ញើ File គំរូធៀប (PDF) ឬរូបភាព (JPG/PNG) ចូលក្នុង Chat នេះ!</b>\n\n"
+        "បន្ទាប់មក អ្នកអាចជ្រើសរើសចំនួនធៀប (៥០, ១០០, ២០០, ៣០០, ៥០០...) រួចចុចបញ្ជូនការកុម្ម៉ង់បានភ្លាមៗ..."
     )
     back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ត្រឡប់ទៅម៉ឺនុយដើម", callback_data="main_menu")]])
-    await safe_edit_or_reply(target, msg, reply_markup=back_kb, parse_mode="Markdown", is_callback=is_callback)
+    await safe_edit_or_reply(target, msg, reply_markup=back_kb, parse_mode="HTML", is_callback=is_callback)
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -409,7 +415,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     session = {
         "design_key": "custom",
-        "design_title": f"គំរូផ្ទាល់ខ្លួន (`{file_name}`)",
+        "design_title": f"គំរូផ្ទាល់ខ្លួន (<code>{html.escape(file_name)}</code>)",
         "price_per_card": 0,
         "file_path": str(file_path),
         "file_name": file_name,
@@ -420,7 +426,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = get_session_text(session)
     keyboard = get_session_keyboard(session)
 
-    await status_msg.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    await status_msg.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -449,7 +455,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     session = {
         "design_key": "custom",
-        "design_title": f"រូបភាពគំរូផ្ទាល់ខ្លួន (`{file_name}`)",
+        "design_title": f"រូបភាពគំរូផ្ទាល់ខ្លួន (<code>{html.escape(file_name)}</code>)",
         "price_per_card": 0,
         "file_path": str(image_path),
         "file_name": file_name,
@@ -460,7 +466,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = get_session_text(session)
     keyboard = get_session_keyboard(session)
 
-    await status_msg.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    await status_msg.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
 
 
 async def process_finalize_order(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, session: dict):
@@ -594,16 +600,16 @@ async def block_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     args = context.args
     if not args:
-        await update.message.reply_text("⚠️ សូមប្រើប្រាស់ទម្រង់៖ `/block <user_id>`\nឧទាហរណ៍៖ `/block 6645972722`", parse_mode="Markdown")
+        await update.message.reply_text("⚠️ សូមប្រើប្រាស់ទម្រង់៖ <code>/block &lt;user_id&gt;</code>\nឧទាហរណ៍៖ <code>/block 6645972722</code>", parse_mode="HTML")
         return
 
     try:
         target_id = int(args[0])
         BANNED_USERS.add(target_id)
         save_banned_users(BANNED_USERS)
-        await update.message.reply_text(f"🚫 **បានបិទគណនី (Block)** User ID `{target_id}` រួចរាល់ដោយជោគជ័យ! គណនីនេះមិនអាចប្រើប្រាស់ Bot បានទៀតឡើយ។", parse_mode="Markdown")
+        await update.message.reply_text(f"🚫 <b>បានបិទគណនី (Block)</b> User ID <code>{target_id}</code> រួចរាល់ដោយជោគជ័យ! គណនីនេះមិនអាចប្រើប្រាស់ Bot បានទៀតឡើយ。", parse_mode="HTML")
     except ValueError:
-        await update.message.reply_text("⚠️ លេខ User ID មិនត្រឹមត្រូវឡើយ។")
+        await update.message.reply_text("⚠️ លេខ User ID មិនត្រឹមត្រូវឡើយ。")
 
 
 async def unblock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -615,7 +621,7 @@ async def unblock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     args = context.args
     if not args:
-        await update.message.reply_text("⚠️ សូមប្រើប្រាស់ទម្រង់៖ `/unblock <user_id>`", parse_mode="Markdown")
+        await update.message.reply_text("⚠️ សូមប្រើប្រាស់ទម្រង់៖ <code>/unblock &lt;user_id&gt;</code>", parse_mode="HTML")
         return
 
     try:
@@ -624,11 +630,11 @@ async def unblock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             BANNED_USERS.discard(target_id)
             BANNED_USERS.discard(str(target_id))
             save_banned_users(BANNED_USERS)
-            await update.message.reply_text(f"✅ **បានបើកគណនី (Unblock)** User ID `{target_id}` វិញរួចរាល់!", parse_mode="Markdown")
+            await update.message.reply_text(f"✅ <b>បានបើកគណនី (Unblock)</b> User ID <code>{target_id}</code> វិញរួចរាល់!", parse_mode="HTML")
         else:
-            await update.message.reply_text(f"ℹ️ User ID `{target_id}` មិនស្ថិតក្នុងបញ្ជី Banned ឡើយ។", parse_mode="Markdown")
+            await update.message.reply_text(f"ℹ️ User ID <code>{target_id}</code> មិនស្ថិតក្នុងបញ្ជី Banned ឡើយ。", parse_mode="HTML")
     except ValueError:
-        await update.message.reply_text("⚠️ លេខ User ID មិនត្រឹមត្រូវឡើយ។")
+        await update.message.reply_text("⚠️ លេខ User ID មិនត្រឹមត្រូវឡើយ。")
 
 
 async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -665,9 +671,9 @@ async def handle_text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         digits = re.sub(r'\D', '', text)
         if len(digits) < 8:
             await update.message.reply_text(
-                "⚠️ **លេខទូរស័ព្ទមិនត្រឹមត្រូវឡើយ!**\n\n"
-                "សូមចុចប៊ូតុង **'📱 ចែករំលែកលេខទូរស័ព្ទ'** ខាងក្រោម ឬវាយបញ្ចូលលេខទូរស័ព្ទត្រឹមត្រូវ (ឧទាហរណ៍៖ 093586024)!",
-                parse_mode="Markdown"
+                "⚠️ <b>លេខទូរស័ព្ទមិនត្រឹមត្រូវឡើយ!</b>\n\n"
+                "សូមចុចប៊ូតុង <b>'📱 ចែករំលែកលេខទូរស័ព្ទ'</b> ខាងក្រោម ឬវាយបញ្ចូលលេខទូរស័ព្ទត្រឹមត្រូវ (ឧទាហរណ៍៖ 093586024)!",
+                parse_mode="HTML"
             )
             return
 
@@ -705,10 +711,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "main_menu":
         welcome_msg = (
-            "💍 **សេវាកម្មបោះពុម្ពធៀបការ និងធៀបកម្មវិធីផ្សេងៗ**\n\n"
+            "💍 <b>សេវាកម្មបោះពុម្ពធៀបការ និងធៀបកម្មវិធីផ្សេងៗ</b>\n\n"
             "សូមជ្រើសរើសជម្រើសខាងក្រោម៖"
         )
-        await safe_edit_or_reply(query, welcome_msg, reply_markup=get_invitation_menu_keyboard(), parse_mode="Markdown", is_callback=True)
+        await safe_edit_or_reply(query, welcome_msg, reply_markup=get_invitation_menu_keyboard(), parse_mode="HTML", is_callback=True)
         return
 
     elif data == "inv_samples":
@@ -754,7 +760,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             text = get_session_text(session)
             keyboard = get_session_keyboard(session)
-            await safe_edit_or_reply(query, text, reply_markup=keyboard, parse_mode="Markdown", is_callback=True)
+            await safe_edit_or_reply(query, text, reply_markup=keyboard, parse_mode="HTML", is_callback=True)
         return
 
     elif data == "inv_order":
@@ -779,7 +785,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session["copies"] = copies
         text = get_session_text(session)
         keyboard = get_session_keyboard(session)
-        await safe_edit_or_reply(query, text, reply_markup=keyboard, parse_mode="Markdown", is_callback=True)
+        await safe_edit_or_reply(query, text, reply_markup=keyboard, parse_mode="HTML", is_callback=True)
 
     elif data == "action_cancel":
         del USER_SESSIONS[user_id]
