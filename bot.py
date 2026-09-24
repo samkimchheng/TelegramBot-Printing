@@ -698,30 +698,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "💍 **សេវាកម្មបោះពុម្ពធៀបការ និងធៀបកម្មវិធីផ្សេងៗ**\n\n"
             "សូមជ្រើសរើសជម្រើសខាងក្រោម៖"
         )
-        if query.message.photo:
-            await query.message.delete()
-            await context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text=welcome_msg,
-                reply_markup=get_invitation_menu_keyboard(),
-                parse_mode="Markdown"
-            )
-        else:
-            await query.edit_message_text(welcome_msg, reply_markup=get_invitation_menu_keyboard(), parse_mode="Markdown")
+        await safe_edit_or_reply(query, welcome_msg, reply_markup=get_invitation_menu_keyboard(), parse_mode="Markdown", is_callback=True)
         return
 
     elif data == "inv_samples":
-        if query.message.photo:
-            await query.message.delete()
-            catalog = load_catalog()
-            await context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text="📂 **កាតាឡុកប្រភេទទិន្នន័យម៉ូដធៀប (Invitation Categories)**\n\nសូមជ្រើសរើសប្រភេទទិន្នន័យម៉ូដធៀបខាងក្រោម ដើម្បីមើលរូបថត និងតម្លៃកំណត់៖",
-                reply_markup=get_categories_keyboard(catalog),
-                parse_mode="Markdown"
-            )
-        else:
-            await show_categories(query, is_callback=True)
+        await show_categories(query, is_callback=True)
         return
 
     elif data.startswith("cat_"):
@@ -759,30 +740,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             text = get_session_text(session)
             keyboard = get_session_keyboard(session)
-
-            if query.message.photo:
-                await query.message.delete()
-                await context.bot.send_message(
-                    chat_id=query.message.chat_id,
-                    text=text,
-                    reply_markup=keyboard,
-                    parse_mode="Markdown"
-                )
-            else:
-                await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+            await safe_edit_or_reply(query, text, reply_markup=keyboard, parse_mode="Markdown", is_callback=True)
         return
 
     elif data == "inv_order":
-        if query.message.photo:
-            await query.message.delete()
-            await context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text="📩 **សេវាទទួលកុម្ម៉ង់បោះពុម្ពធៀបផ្ទាល់ខ្លួន**\n\n📥 **សូមផ្ញើ File គំរូធៀប (PDF) ឬរូបភាព (JPG/PNG) ចូលក្នុង Chat នេះ!**",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 ត្រឡប់ទៅម៉ឺនុយដើម", callback_data="main_menu")]]),
-                parse_mode="Markdown"
-            )
-        else:
-            await show_upload_instruction(query, is_callback=True)
+        await show_upload_instruction(query, is_callback=True)
         return
 
     elif data == "inv_promos":
@@ -795,7 +757,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session = USER_SESSIONS.get(user_id)
 
     if not session:
-        await query.edit_message_text("⚠️ មិនមានប្រតិបត្តិការកុម្ម៉ង់សកម្មឡើយ។ សូមជ្រើសរើសម៉ូដធៀបម្តងទៀត!")
+        await safe_edit_or_reply(query, "⚠️ មិនមានប្រតិបត្តិការកុម្ម៉ង់សកម្មឡើយ។ សូមជ្រើសរើសម៉ូដធៀបម្តងទៀត!", is_callback=True)
         return
 
     if data.startswith("set_copy_"):
@@ -803,11 +765,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session["copies"] = copies
         text = get_session_text(session)
         keyboard = get_session_keyboard(session)
-        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        await safe_edit_or_reply(query, text, reply_markup=keyboard, parse_mode="Markdown", is_callback=True)
 
     elif data == "action_cancel":
         del USER_SESSIONS[user_id]
-        await query.edit_message_text("❌ ប្រតិបត្តិការកុម្ម៉ង់ត្រូវបានបោះបង់។")
+        await safe_edit_or_reply(query, "❌ ប្រតិបត្តិការកុម្ម៉ង់ត្រូវបានបោះបង់។", is_callback=True)
 
     elif data == "action_submit_order":
         session["awaiting_phone"] = True
@@ -819,7 +781,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         if query.message:
-            await query.message.delete()
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
 
         await context.bot.send_message(
             chat_id=user_id,
