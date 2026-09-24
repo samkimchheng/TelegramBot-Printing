@@ -4,6 +4,8 @@ import re
 import time
 import logging
 import json
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 from pathlib import Path
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
@@ -37,6 +39,29 @@ USER_LAST_ACTION = {}  # Anti-flood rate limiting: user_id -> timestamp
 
 MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB max file size limit
 ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
+
+
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    """Lightweight HTTP Handler to satisfy Cloud Web Service Health Checks."""
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(b"OK - Telegram Bot is running 24/7!")
+
+    def log_message(self, format, *args):
+        pass  # Suppress health check access logs
+
+
+def start_health_server():
+    """Start background HTTP health check server for Render Free Web Service."""
+    port = int(os.getenv("PORT", "10000"))
+    try:
+        server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+        logger.info(f"Health check HTTP server started on port {port}")
+        server.serve_forever()
+    except Exception as e:
+        logger.error(f"Error starting health check server: {e}")
 
 
 def check_rate_limit(user_id: int, limit_seconds: float = 1.0) -> bool:
@@ -588,6 +613,10 @@ def main():
         sys.exit(1)
 
     print("Starting Hardened Telegram Invitation Order Bot...")
+
+    # Start background HTTP health server for Render Cloud Free Web Service
+    threading.Thread(target=start_health_server, daemon=True).start()
+
     app = ApplicationBuilder().token(token).post_init(post_init).build()
 
     app.add_error_handler(error_handler)
