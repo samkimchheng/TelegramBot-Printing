@@ -309,14 +309,17 @@ async def show_item_photo(query, context, cat_key: str, item_index: int):
             InlineKeyboardButton(f"ម៉ូដ {item_index + 1}/{len(items)}", callback_data="noop"),
             InlineKeyboardButton("➡️ ម៉ូដបន្ទាប់", callback_data=f"viewitem_{cat_key}_{next_idx}")
         ],
-        [InlineKeyboardButton("🔙 ត្រឡប់ទៅប្រភេទធៀបទាំងអស់", callback_data="inv_samples")]
+        [InlineKeyboardButton("📂 មើលប្រភេទធៀបផ្សេងទៀត", callback_data="inv_categories")]
     ])
 
-    chat_id = query.message.chat_id
-    try:
-        await query.message.delete()
-    except Exception:
-        pass
+    msg_obj = query.message if hasattr(query, "message") and query.message else None
+    chat_id = msg_obj.chat_id if msg_obj else (query.effective_chat.id if hasattr(query, "effective_chat") else None)
+
+    if msg_obj:
+        try:
+            await msg_obj.delete()
+        except Exception:
+            pass
 
     if img_path.exists():
         with open(img_path, "rb") as photo_file:
@@ -674,7 +677,7 @@ async def handle_text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if "ម៉ូដធៀប" in text:
-        await show_categories(update, is_callback=False)
+        await show_item_photo(update, context, "classic", 0)
     elif "ផ្ញើគំរូធៀបកុម្ម៉ង់" in text:
         await show_upload_instruction(update, is_callback=False)
     elif "ប្រូម៉ូសិន" in text:
@@ -709,6 +712,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     elif data == "inv_samples":
+        await show_item_photo(query, context, "classic", 0)
+        return
+
+    elif data == "inv_categories":
         await show_categories(query, is_callback=True)
         return
 
