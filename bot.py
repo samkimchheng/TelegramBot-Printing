@@ -432,7 +432,14 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
 
-    if data == "main_menu":
+    if data == "no_username_info":
+        await query.answer_callback_query(
+            "ℹ️ អតិថិជននេះមិនមាន Telegram Username ទេ។\n\n👉 សូមចុចលើឈ្មោះអតិថិជន (អក្សរពណ៌ខៀវ) ក្នុងសារខាងលើ ដើម្បី Chat ទៅកាន់គាត់ مباشرة!",
+            show_alert=True
+        )
+        return
+
+    elif data == "main_menu":
         welcome_msg = (
             "💍 **សេវាកម្មបោះពុម្ពធៀបការ និងធៀបកម្មវិធីផ្សេងៗ**\n\n"
             "សូមជ្រើសរើសជម្រើសខាងក្រោម៖"
@@ -599,16 +606,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if admin_ids:
             admin_alert = (
                 f"🔔 <b>មានការកុម្ម៉ង់ធៀបថ្មី! (New Order Alert)</b>\n\n"
-                f"👤 <b>អតិថិជន</b>: <a href=\"tg://user?id={user_id}\">{user_full_name}</a> ({username_str})\n"
+                f"👤 <b>អតិថិជន</b>: <a href=\"tg://user?id={user_id}\"><b>{user_full_name}</b></a> ({username_str})\n"
                 f"🆔 <b>User ID</b>: <code>{user_id}</code>\n"
                 f"📜 <b>ម៉ូដធៀប</b>: {design_title}\n"
                 f"🔢 <b>ចំនួនកុម្ម៉ង់</b>: <b>{copies} ធៀប</b>\n"
                 f"💰 <b>តម្លៃសរុប</b>: <b>{total_price_text}</b>\n"
-                f"⏰ <b>កាលបរិច្ឆេទ</b>: {order_time}"
+                f"⏰ <b>កាលបរិច្ឆេទ</b>: {order_time}\n\n"
+                f"👉 <b>របៀបទាក់ទង</b>: ចុចលើឈ្មោះ <a href=\"tg://user?id={user_id}\"><b>{user_full_name}</b></a> (អក្សរពណ៌ខៀវ) ខាងលើដើម្បី Chat!"
             )
-            admin_kb = None
             if user.username:
-                admin_kb = InlineKeyboardMarkup([[InlineKeyboardButton("💬 ចុច Chat ទៅអតិថិជនភ្លាមៗ", url=f"https://t.me/{user.username}")]])
+                admin_kb = InlineKeyboardMarkup([[InlineKeyboardButton("💬 ចុច Chat ទៅអតិថិជន (t.me)", url=f"https://t.me/{user.username}")]])
+            else:
+                admin_kb = InlineKeyboardMarkup([[InlineKeyboardButton("💬 ចុចលើឈ្មោះអតិថិជន (អក្សរពណ៌ខៀវ) ខាងលើ", callback_data="no_username_info")]])
 
             for admin_id in admin_ids:
                 try:
