@@ -6,7 +6,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
-ADMIN_ID = os.getenv("ADMIN_ID", "647098577").strip()
+
+# Support multiple admin Telegram IDs separated by comma (e.g. Husband & Wife)
+raw_admin_ids = os.getenv("ADMIN_ID", "647098577").strip()
+ADMIN_IDS = [aid.strip() for aid in raw_admin_ids.split(",") if aid.strip()]
+
 PRINTER_NAME = os.getenv("PRINTER_NAME", "").strip()
 PRICE_PER_PAGE_BW = int(os.getenv("PRICE_PER_PAGE_BW", "200"))
 PRICE_PER_PAGE_COLOR = int(os.getenv("PRICE_PER_PAGE_COLOR", "500"))
