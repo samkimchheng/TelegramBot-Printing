@@ -32,7 +32,29 @@ logger = logging.getLogger(__name__)
 ORDERS_DIR = config.BASE_DIR / "orders"
 ORDERS_DIR.mkdir(parents=True, exist_ok=True)
 
-CATALOG_FILE = config.BASE_DIR / "catalog.json"
+BANNED_USERS_FILE = config.BASE_DIR / "banned_users.json"
+
+
+def load_banned_users() -> set:
+    if BANNED_USERS_FILE.exists():
+        try:
+            with open(BANNED_USERS_FILE, "r", encoding="utf-8") as f:
+                return set(json.load(f))
+        except Exception:
+            return set()
+    return set()
+
+
+def save_banned_users(banned_set: set):
+    with open(BANNED_USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(list(banned_set), f, indent=2)
+
+
+BANNED_USERS = load_banned_users()
+
+
+def is_user_banned(user_id: int) -> bool:
+    return user_id in BANNED_USERS or str(user_id) in [str(u) for u in BANNED_USERS]
 
 # Temporary user order sessions & rate limiters
 USER_SESSIONS = {}
@@ -83,7 +105,9 @@ def keep_alive_pinger():
 
 
 def check_rate_limit(user_id: int, limit_seconds: float = 1.0) -> bool:
-    """Anti-flood rate limiter: returns False if user is spamming commands."""
+    """Anti-flood rate limiter & Banned user check: returns False if user is banned or spamming."""
+    if is_user_banned(user_id):
+        return False
     now = time.time()
     last_time = USER_LAST_ACTION.get(user_id, 0)
     if now - last_time < limit_seconds:
@@ -535,8 +559,54 @@ async def process_finalize_order(update: Update, context: ContextTypes.DEFAULT_T
         del USER_SESSIONS[user_id]
 
 
+async def block_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command to block spammer/troll user ID."""
+    user = update.effective_user
+    admin_ids = getattr(config, "ADMIN_IDS", [])
+    if user.id not in admin_ids and str(user.id) not in [str(a) for a in admin_ids]:
+        return
+
+    args = context.args
+    if not args:
+        await update.message.reply_text("⚠️ សូមប្រើប្រាស់ទម្រង់៖ `/block <user_id>`\nឧទាហរណ៍៖ `/block 6645972722`", parse_mode="Markdown")
+        return
+
+    try:
+        target_id = int(args[0])
+        BANNED_USERS.add(target_id)
+        save_banned_users(BANNED_USERS)
+        await update.message.reply_text(f"🚫 **បានបិទគណនី (Block)** User ID `{target_id}` រួចរាល់ដោយជោគជ័យ! គណនីនេះមិនអាចប្រើប្រាស់ Bot បានទៀតឡើយ។", parse_mode="Markdown")
+    except ValueError:
+        await update.message.reply_text("⚠️ លេខ User ID មិនត្រឹមត្រូវឡើយ។")
+
+
+async def unblock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command to unblock user ID."""
+    user = update.effective_user
+    admin_ids = getattr(config, "ADMIN_IDS", [])
+    if user.id not in admin_ids and str(user.id) not in [str(a) for a in admin_ids]:
+        return
+
+    args = context.args
+    if not args:
+        await update.message.reply_text("⚠️ សូមប្រើប្រាស់ទម្រង់៖ `/unblock <user_id>`", parse_mode="Markdown")
+        return
+
+    try:
+        target_id = int(args[0])
+        if target_id in BANNED_USERS or str(target_id) in [str(u) for u in BANNED_USERS]:
+            BANNED_USERS.discard(target_id)
+            BANNED_USERS.discard(str(target_id))
+            save_banned_users(BANNED_USERS)
+            await update.message.reply_text(f"✅ **បានបើកគណនី (Unblock)** User ID `{target_id}` វិញរួចរាល់!", parse_mode="Markdown")
+        else:
+            await update.message.reply_text(f"ℹ️ User ID `{target_id}` មិនស្ថិតក្នុងបញ្ជី Banned ឡើយ។", parse_mode="Markdown")
+    except ValueError:
+        await update.message.reply_text("⚠️ លេខ User ID មិនត្រឹមត្រូវឡើយ។")
+
+
 async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle 1-tap phone contact sharing from customer."""
+    """Handle 1-tap phone contact sharing from customer (Telegram Verified)."""
     user = update.effective_user
     if not check_rate_limit(user.id):
         return
@@ -544,11 +614,12 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
         LAST_USER_MESSAGES[user.id] = update.message.message_id
 
     contact = update.message.contact
-    phone = contact.phone_number if contact else "N/A"
+    raw_phone = contact.phone_number if contact else "N/A"
+    phone_label = f"{raw_phone} (✅ ផ្ទៀងផ្ទាត់ដោយ Telegram 100%)"
 
     session = USER_SESSIONS.get(user.id)
     if session and session.get("awaiting_phone"):
-        session["phone"] = phone
+        session["phone"] = phone_label
         session["awaiting_phone"] = False
         await process_finalize_order(update, context, user.id, session)
 
@@ -564,7 +635,17 @@ async def handle_text_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session = USER_SESSIONS.get(user.id)
 
     if session and session.get("awaiting_phone"):
-        session["phone"] = text
+        # Validate phone input (must contain digits)
+        digits = re.sub(r'\D', '', text)
+        if len(digits) < 8:
+            await update.message.reply_text(
+                "⚠️ **លេខទូរស័ព្ទមិនត្រឹមត្រូវឡើយ!**\n\n"
+                "សូមចុចប៊ូតុង **'📱 ចែករំលែកលេខទូរស័ព្ទ'** ខាងក្រោម ឬវាយបញ្ចូលលេខទូរស័ព្ទត្រឹមត្រូវ (ឧទាហរណ៍៖ 093586024)!",
+                parse_mode="Markdown"
+            )
+            return
+
+        session["phone"] = f"{text} (📝 វាយបញ្ចូលដោយដៃ)"
         session["awaiting_phone"] = False
         await process_finalize_order(update, context, user.id, session)
         return
@@ -773,6 +854,8 @@ def main():
     app.add_error_handler(error_handler)
 
     app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("block", block_command))
+    app.add_handler(CommandHandler("unblock", unblock_command))
     app.add_handler(MessageHandler(filters.CONTACT, handle_contact))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
