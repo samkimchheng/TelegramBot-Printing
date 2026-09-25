@@ -296,6 +296,12 @@ async def show_item_photo(query, context, cat_key: str, item_index: int):
     img_rel_path = item.get("image", "")
 
     img_path = config.BASE_DIR / img_rel_path
+    if not img_path.exists():
+        for ext in [".jpeg", ".jpg", ".png", ".webp"]:
+            alt_path = img_path.with_suffix(ext)
+            if alt_path.exists():
+                img_path = alt_path
+                break
 
     caption = (
         f"📸 <b>{html.escape(str(item_name))}</b> ({html.escape(str(cat_name))})\n\n"
@@ -543,6 +549,12 @@ async def process_finalize_order(update: Update, context: ContextTypes.DEFAULT_T
 
         img_file_path = session.get("file_path")
         full_img_path = (config.BASE_DIR / img_file_path) if img_file_path else None
+        if full_img_path and not full_img_path.exists():
+            for ext in [".jpeg", ".jpg", ".png", ".webp", ".pdf"]:
+                alt_path = full_img_path.with_suffix(ext)
+                if alt_path.exists():
+                    full_img_path = alt_path
+                    break
 
         photo_data = None
         is_pdf = False
