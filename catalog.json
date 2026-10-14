@@ -7,14 +7,14 @@
         {
           "id": "classic_01",
           "name": "ធៀបការក្លាសិក ម៉ូដ 01",
-          "price": 1200,
+          "price": 900,
           "image": "images/classic/classic_01.jpeg",
           "description": "ធៀបការក្លាសិក ម៉ូដ 01 រចនាស្អាត គុណភាពខ្ពស់ សម្រាប់ហាង ឆេងមុនីបោះពុម្ព"
         },
         {
           "id": "classic_02",
           "name": "ធៀបការក្លាសិក ម៉ូដ 02",
-          "price": 1200,
+          "price": 1000,
           "image": "images/classic/classic_02.jpeg",
           "description": "ធៀបការក្លាសិក ម៉ូដ 02 រចនាស្អាត គុណភាពខ្ពស់ សម្រាប់ហាង ឆេងមុនីបោះពុម្ព"
         },
@@ -28,7 +28,7 @@
         {
           "id": "classic_04",
           "name": "ធៀបការក្លាសិក ម៉ូដ 04",
-          "price": 1200,
+          "price": 900,
           "image": "images/classic/classic_04.jpeg",
           "description": "ធៀបការក្លាសិក ម៉ូដ 04 រចនាស្អាត គុណភាពខ្ពស់ សម្រាប់ហាង ឆេងមុនីបោះពុម្ព"
         },
@@ -42,35 +42,35 @@
         {
           "id": "classic_06",
           "name": "ធៀបការក្លាសិក ម៉ូដ 06",
-          "price": 1200,
+          "price": 850,
           "image": "images/classic/classic_06.jpeg",
           "description": "ធៀបការក្លាសិក ម៉ូដ 06 រចនាស្អាត គុណភាពខ្ពស់ សម្រាប់ហាង ឆេងមុនីបោះពុម្ព"
         },
         {
           "id": "classic_07",
           "name": "ធៀបការក្លាសិក ម៉ូដ 07",
-          "price": 1200,
+          "price": 900,
           "image": "images/classic/classic_07.jpeg",
           "description": "ធៀបការក្លាសិក ម៉ូដ 07 រចនាស្អាត គុណភាពខ្ពស់ សម្រាប់ហាង ឆេងមុនីបោះពុម្ព"
         },
         {
           "id": "classic_08",
           "name": "ធៀបការក្លាសិក ម៉ូដ 08",
-          "price": 1200,
+          "price": 900,
           "image": "images/classic/classic_08.jpeg",
           "description": "ធៀបការក្លាសិក ម៉ូដ 08 រចនាស្អាត គុណភាពខ្ពស់ សម្រាប់ហាង ឆេងមុនីបោះពុម្ព"
         },
         {
           "id": "classic_09",
           "name": "ធៀបការក្លាសិក ម៉ូដ 09",
-          "price": 1200,
+          "price": 1000,
           "image": "images/classic/classic_09.jpeg",
           "description": "ធៀបការក្លាសិក ម៉ូដ 09 រចនាស្អាត គុណភាពខ្ពស់ សម្រាប់ហាង ឆេងមុនីបោះពុម្ព"
         },
         {
           "id": "classic_10",
           "name": "ធៀបការក្លាសិក ម៉ូដ 10",
-          "price": 1200,
+          "price": 900,
           "image": "images/classic/classic_10.jpeg",
           "description": "ធៀបការក្លាសិក ម៉ូដ 10 រចនាស្អាត គុណភាពខ្ពស់ សម្រាប់ហាង ឆេងមុនីបោះពុម្ព"
         }
